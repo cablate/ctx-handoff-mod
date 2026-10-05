@@ -813,12 +813,22 @@ test('S7 記憶的欄位原樣保留、認不得的延續行併進標題、自�
   expect(out.indexOf('## 備註')).toBeGreaterThan(out.indexOf('### 規則乙'))
 })
 
-test('S7 記憶超過 40 條：狀態顯示有幾條不會帶入', async ($, on) => {
+// mock.clock 從 0 開始：今天是 1970-01-01，超過 30 天前的根據就算封存
+const TIERED_NOTES = [
+  '# ctx-handoff 專案經驗', '', '## 記憶',
+  '- [feedback] 回報用條列', '  - 做法：一點一行', '  - 理由：好讀', '  - 根據：1969-01-01 abc｜使用者原話：「用條列」',
+  '- [project] 新鮮的事實', '  - 做法：細節只在正本', '  - 根據：1969-12-20 abc｜最近證實過',
+  '- [reference] 很久沒證實的位置', '  - 根據：1969-11-01 abc｜很久以前',
+  '- [project] 沒有日期的事實',
+  '', '## 規則',
+].join('\n')
+
+test('S7 記憶依類型帶入：狀態顯示整條、只帶標題、封存各幾條（不再因條數多而不帶入）', async ($, on) => {
   const w = world(on, 100_000)
   const memory = Array.from({ length: 42 }, (_, i) => `- [project] 第 ${i + 1} 條`)
-  w.files.set(NOTES, ['# ctx-handoff 專案經驗', '', '## 記憶', ...memory, '', '## 規則', ''].join('\n'))
+  w.files.set(NOTES, TIERED_NOTES.replace('\n\n## 規則', ['', ...memory, '', '## 規則'].join('\n')))
   const s = (await cmd($, '')).text
-  expect(s).toContain('有 2 條不會帶入新對話')
+  expect(s).toContain('記憶帶入：偏好與修正 1 條整條、事實與位置 44 條只帶標題、封存 1 條')
 })
 
 // ---------- S8：背景工作與排程（classic.Stop） ----------
@@ -1418,11 +1428,39 @@ test('記憶與規則：超過字數上限整條丟掉，記下原因', async ($
   ])
 })
 
-test('記憶帶入新對話：有標題、做法、理由，不帶根據', async ($, on) => {
+test('記憶帶入新對話：偏好與修正整條、事實只帶標題、封存的不帶，都不帶根據', async ($, on) => {
   const w = world(on, 1000)
-  w.files.set(NOTES, ['# ctx-handoff 專案經驗', '', '## 記憶', '- [project] 標題', '  - 做法：照做', '  - 理由：因為', '  - 根據：2026-01-01 abc｜只給整理看', '', '## 規則'].join('\n'))
+  w.files.set(NOTES, TIERED_NOTES)
   const r = await $.prompt.context({ blocks: [] })
   const text = r.blocks.find(b => b.name === 'ctxHandoffProject')?.text ?? ''
-  expect(text).toContain(['- [project] 標題', '  - 做法：照做', '  - 理由：因為'].join('\n'))
-  expect(text).not.toContain('只給整理看')
+  expect(text).toContain(['## 使用者的偏好與修正', '- [feedback] 回報用條列', '  - 做法：一點一行', '  - 理由：好讀'].join('\n'))
+  expect(text).toContain(['- [project] 新鮮的事實', '- [project] 沒有日期的事實'].join('\n'))
+  expect(text).not.toContain('細節只在正本')
+  expect(text).not.toContain('很久沒證實的位置')
+  expect(text).not.toMatch(/根據|使用者原話/)
+})
+
+test('記憶確認：confirm_memory 加一筆根據，封存的因此恢復帶入；整理提示標出封存', async ($, on) => {
+  const w = world(on, 100_000, 1_000_000, {}, [], 5)
+  w.files.set(NOTES, TIERED_NOTES)
+  distillReply = actionsReply({ op: 'confirm_memory', id: 'M3', evidence: '這次又查了一次位置' })
+  await distillNow($)
+  expect(w.forks[0]).toContain('M3 [reference] 很久沒證實的位置｜根據：1969-11-01 abc｜很久以前（已封存：超過 30 天沒被證實）')
+  const notes = w.files.get(NOTES) ?? ''
+  expect(notes).toContain(['- [reference] 很久沒證實的位置', '  - 根據：1969-11-01 abc｜很久以前', '  - 根據：1970-01-01 S1｜這次又查了一次位置'].join('\n'))
+  expect(lastOf(w).changes).toEqual(['記憶確認：[reference] 很久沒證實的位置'])
+  const r = await $.prompt.context({ blocks: [] })
+  expect(r.blocks.find(b => b.name === 'ctxHandoffProject')?.text).toContain('- [reference] 很久沒證實的位置')
+})
+
+test('面板：封存的記憶另列一區，按留下就加一筆今天的根據並恢復', async ($, on) => {
+  const w = world(on, 1000)
+  w.files.set(NOTES, TIERED_NOTES)
+  const ui = await $.ui.mount(PANE_MOUNT)
+  expect(await ui.find({ type: 'Text', text: /封存（1 條，超過 30 天沒被證實/ })).toBeDefined()
+  await ui.press({ key: 'keep:[reference] 很久沒證實的位置' })
+  await w.clock.advance(0)
+  expect(w.files.get(NOTES) ?? '').toContain('  - 根據：1970-01-01｜在面板確認留下')
+  expect(await ui.find({ type: 'Text', text: /封存（/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /已留下：很久沒證實的位置/ })).toBeDefined()
 })

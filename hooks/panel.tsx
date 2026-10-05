@@ -21,6 +21,9 @@ export type PanelView = {
   // head：[類型] 標題；detail：做法、理由、根據各一行（展開才顯示）
   memory: { head: string; detail: string[] }[]
   memoryTotal: number
+  // 超過 staleDays 天沒被證實、不帶入新對話的事實類記憶（[類型] 標題）
+  archived: string[]
+  staleDays: number
   rules: { name: string; count: number }[]
   // 展開全文的項目（m:<記憶原文>／g<守門編號>／changes）
   expanded: string[]
@@ -36,6 +39,7 @@ export type PanelActions = {
   toggle: (key: string) => void
   ask: (key: string | undefined) => void
   drop: (key: string) => void
+  keep: (head: string) => void
   close: () => void
 }
 
@@ -151,6 +155,22 @@ export function panelTree(ui: Elements, v: PanelView, act: PanelActions) {
             : null}
         </Box>
       ))}
+
+      {v.archived.length
+        ? (
+          <Box flexDirection="column">
+            <Text> </Text>
+            <Text bold>封存（{v.archived.length} 條，超過 {v.staleDays} 天沒被證實，不帶入新對話）</Text>
+            {v.archived.map(head => (
+              <Box key={`a:${head}`}>
+                <Text dimColor>　{fit(head, short)} </Text>
+                <Button key={`keep:${head}`} label="留下" onPress={() => act.keep(head)} />
+                {dropButtons(`m:${head}`)}
+              </Box>
+            ))}
+          </Box>
+        )
+        : null}
 
       <Text> </Text>
       <Text bold>規則（{v.rules.length} 條）</Text>
