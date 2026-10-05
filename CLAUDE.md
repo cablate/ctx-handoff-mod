@@ -26,6 +26,7 @@ node tools/status.mjs             # 確認各 session 已熱重載、看整理�
 - **一個工作區一份經驗檔，不跨專案**：工作區是 session 啟動的資料夾（依 `$.session.root()`；`$.session.repo()` 會跟著 Bash `cd` 變），從 git worktree 啟動時算主工作樹。經驗檔在 `<claude>/projects/<編碼後的工作區路徑>/memory/ctx-handoff.md`，整理只寫它、新對話只帶入它；不追蹤 session 碰過的其他 repo，也不做跨檔搬移（維護者 2026-10-05 決定：多專案分檔造成分錯專案、worktree 對應、多個 session 互改別人檔案等問題）。不寫 `MEMORY.md`（內建 auto memory 開啟時會重複載入或改寫）。
 - **不留相容舊格式的程式**：格式或機制改了就直接改，不寫遷移或雙格式判斷；舊資料用 `tools/notes.mjs` 一次手動整理。
 - **背景失敗原因寫進 `$.store`** 並在 `/handoff` 狀態顯示：`$.ui.log` 在 `/clear` 之後不會留在對話檔。手動指令沒有回答時不要回報「完成」。
+- **守門只採用使用者核准的**：`/handoff guard suggest` 把出現 3 次以上的規則交給 `DISTILL_MODEL` 提草稿（工具名、match／unless regex、deny 或 remind），程式驗證格式並試比對這段對話已跑過的工具呼叫，存成草稿；`/handoff guard on N` 才生效。設定依工作區存在 `$.store`（`guards:<工作區>`），不寫進經驗檔（不佔新對話 context）。`tool.call` hook 出錯時放行，不擋正常工作。
 - **指令名稱**：`/handoff` 被使用者自己的指令或 skill 佔用時，改註冊 `/ctx-handoff`。
 
 ## 平台事實（實測過）

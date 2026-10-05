@@ -888,6 +888,7 @@ function resetState() {
   deferral = undefined
   deferToasted = false
   seenKnown.clear()
+  guardsKeyCache = undefined
 }
 
 // 每個 session 一把的鍵（值不改寫）：第一次看到的時間記在 seen，超過 30 天的刪掉
@@ -907,6 +908,198 @@ async function prune($: EngineInterface) {
     changed = true
   }
   if (changed) await $.store.set('seen', seen)
+}
+
+// ---------- 守門：反覆被提醒的規則，改成工具呼叫前的機械檢查 ----------
+// 模型只提草稿（proposed），使用者 /handoff guard on N 核准才生效；依工作區存在 $.store，不進經驗檔
+const GUARD_MIN_COUNT = 3
+const GUARD_MAX_TOKENS = 4_000
+const GUARD_PATTERN_MAX = 300
+const GUARD_MODES = ['deny', 'remind'] as const
+// tool.call 輸入裡不屬於工具參數的鍵
+const RESERVED_KEYS = new Set(['tool', 'tool_use_id', 'consent', 'agentId'])
+
+type GuardMode = typeof GUARD_MODES[number]
+type GuardState = 'proposed' | 'on' | 'off'
+type Guard = {
+  id: number; rule: string; tool: string; match: string; unless?: string; message: string
+  mode: GuardMode; state: GuardState; hits: number; at: number
+  // 提案時試比對這段對話已跑過的工具呼叫：命中幾次、總共幾次
+  replay?: { hits: number; calls: number }
+}
+
+// 每次工具呼叫都會用到：工作區在 process 內不變，算一次就記住（熱重載會重算）
+let guardsKeyCache: string | undefined
+const guardsKey = async ($: EngineInterface) => (guardsKeyCache ??= `guards:${await projectKey($)}`)
+async function loadGuards($: EngineInterface) {
+  return ((await $.store.get(await guardsKey($))) as Guard[] | undefined) ?? []
+}
+
+// 比對對象：工具參數裡的字串值（Bash 就是 command），其他值轉成 JSON，以換行串起來
+function inputText(input: Record<string, unknown>) {
+  return Object.entries(input)
+    .filter(([k, v]) => !RESERVED_KEYS.has(k) && v !== undefined)
+    .map(([, v]) => (typeof v === 'string' ? v : JSON.stringify(v)))
+    .join('\n')
+}
+
+const toolMatches = (pattern: string, tool: string) =>
+  pattern.endsWith('*') ? tool.startsWith(pattern.slice(0, -1)) : pattern === tool
+
+function guardHits(g: Pick<Guard, 'tool' | 'match' | 'unless'>, tool: string, text: string) {
+  if (!toolMatches(g.tool, tool)) return false
+  try {
+    if (!new RegExp(g.match, 'i').test(text)) return false
+    return g.unless === undefined || !new RegExp(g.unless, 'i').test(text)
+  } catch {
+    return false
+  }
+}
+
+function guardPrompt(rules: Rule[], tools: string[]) {
+  return [
+    '你替一個 Claude Code 工作區設計「守門」：在 AI 呼叫工具之前，用正規表達式比對工具參數，攔下違反規則的呼叫。',
+    '下面是這個工作區被反覆提醒的規則。逐條判斷：違規時，工具參數裡有沒有明確、可比對的特徵？',
+    '',
+    '只在這些情況提出守門：',
+    '- 違規一定經過某個工具，參數有明確特徵（指令、工具名稱、SQL 關鍵字、路徑）',
+    '- 有 unless 可以排除「照規則做」的正確寫法，例如改用規則指定的工具或包裝腳本',
+    '不要提出：規則講的是回答裡的說法、判斷順序、寫作內容，或特徵太模糊會擋到正常工作的。',
+    '',
+    '比對方式：',
+    '- tool：工具名稱原樣，例如 Bash、Edit、mcp__supabase__execute_sql；結尾 * 表示前綴',
+    '- 比對文字：工具參數的字串值以換行串起來（Bash 就是 command 本身）；不分大小寫的 JavaScript 正規表達式',
+    `- match／unless 各不超過 ${GUARD_PATTERN_MAX} 字；寧可窄、不要寬`,
+    '- mode：deny（執行前擋下）只用在不可逆、正式環境或代價高的錯誤；其他用 remind（照常執行，之後提醒）',
+    '- message：給 AI 看的一句話，說該改成怎麼做（引用規則裡的工具或指令）',
+    '',
+    `這個對話用過的工具：${tools.length ? tools.join(', ') : '（無紀錄）'}`,
+    '',
+    `輸出：在 ${ACTIONS_START} 與 ${ACTIONS_END} 之間，每行一個 JSON，每條規則最多一個；沒有適合的就兩行標記之間留空。`,
+    '{"rule":"<規則名稱，原樣>","tool":"Bash","match":"<regex>","unless":"<regex，可省略>","mode":"remind","message":"<一句話>"}',
+    '',
+    '=== 規則 ===',
+    ...rules.flatMap(r => [`### ${r.name}`, ...r.body]),
+  ].join('\n')
+}
+
+type ProposedGuard = Pick<Guard, 'rule' | 'tool' | 'match' | 'unless' | 'mode' | 'message'>
+
+function parseGuards(text: string, names: Set<string>) {
+  const out: ProposedGuard[] = []
+  const rejected: string[] = []
+  const start = text.indexOf(ACTIONS_START)
+  const end = text.indexOf(ACTIONS_END, start + 1)
+  if (start === -1 || end === -1) return { out, rejected: ['找不到 ACTIONS 標記'] }
+  for (const line of text.slice(start + ACTIONS_START.length, end).split('\n')) {
+    if (!line.trim()) continue
+    try {
+      const g = JSON.parse(line) as Record<string, unknown>
+      const str = (k: string) => (typeof g[k] === 'string' && (g[k] as string).trim() ? (g[k] as string) : undefined)
+      const rule = str('rule'), tool = str('tool'), match = str('match'), message = str('message')
+      const unless = str('unless')
+      const mode = GUARD_MODES.find(m => m === g.mode)
+      if (!rule || !names.has(rule)) throw new Error('rule 不是候選規則')
+      if (!tool || !/^[\w.-]+\*?$/.test(tool)) throw new Error('tool 格式不對')
+      if (!match || !message || !mode) throw new Error('缺 match／message／mode')
+      for (const p of [match, unless]) {
+        if (p === undefined) continue
+        if (p.length > GUARD_PATTERN_MAX) throw new Error('regex 太長')
+        new RegExp(p, 'i')
+      }
+      if (out.some(o => o.rule === rule)) throw new Error('同一條規則重複')
+      out.push({ rule, tool, match, ...(unless ? { unless } : {}), mode, message })
+    } catch (err) {
+      rejected.push(`${clip(line.trim(), 80)}（${err instanceof Error ? err.message : String(err)}）`)
+    }
+  }
+  return { out, rejected }
+}
+
+// 出現 GUARD_MIN_COUNT 次以上、還沒有守門（任何狀態）的規則
+async function guardCandidates($: EngineInterface) {
+  const guards = await loadGuards($)
+  const notes = parseNotes(await readText($, await notesFile($)))
+  return notes.rules.filter(r => r.count >= GUARD_MIN_COUNT && !guards.some(g => g.rule === r.name))
+}
+
+async function suggestGuards($: EngineInterface) {
+  const candidates = await guardCandidates($)
+  if (candidates.length === 0) return { text: `${tag} 沒有出現 ${GUARD_MIN_COUNT} 次以上、還沒有守門的規則\n${await guardList($)}` }
+  const rows = (await $.session.messages()) as readonly Row[]
+  const calls = rows.flatMap(r => r.toolUses)
+  const r = await $.model.complete({
+    model: DISTILL_MODEL,
+    effort: DISTILL_EFFORT,
+    maxTokens: GUARD_MAX_TOKENS,
+    timeoutMs: DISTILL_TIMEOUT_MS,
+    system: guardPrompt(candidates, [...new Set(calls.map(c => c.tool))]),
+    prompt: '依系統指示輸出 ACTIONS。',
+  })
+  if (!r.isAnswered) return { text: `${tag} 守門建議失敗：${r.reason}` }
+  const { out, rejected } = parseGuards(r.text, new Set(candidates.map(c => c.name)))
+  const guards = await loadGuards($)
+  const at = await $.clock.now()
+  let id = guards.reduce((n, g) => Math.max(n, g.id), 0)
+  const added = out.map(g => ({
+    ...g, id: ++id, state: 'proposed' as const, hits: 0, at,
+    replay: { hits: calls.filter(c => guardHits(g, c.tool, inputText(c.input))).length, calls: calls.length },
+  }))
+  await $.store.set(await guardsKey($), [...guards, ...added])
+  return {
+    text: [
+      `${tag} 看了 ${candidates.length} 條規則，提出 ${added.length} 個守門草稿（還沒生效，/handoff guard on N 核准）`,
+      ...(rejected.length ? [`　丟棄 ${rejected.length} 行：${rejected.join(' ／ ')}`] : []),
+      '',
+      await guardList($),
+    ].join('\n'),
+  }
+}
+
+const STATE_LABEL: Record<GuardState, string> = { proposed: '草稿', on: '啟用', off: '停用' }
+
+async function guardList($: EngineInterface) {
+  const guards = await loadGuards($)
+  if (guards.length === 0) return `守門：無（/handoff guard suggest 從出現 ${GUARD_MIN_COUNT} 次以上的規則提出草稿）`
+  return [
+    '守門：',
+    ...guards.flatMap(g => [
+      `#${g.id} [${STATE_LABEL[g.state]}・${g.mode === 'deny' ? '擋下' : '提醒'}] ${g.rule}（已觸發 ${g.hits} 次）`,
+      `　${g.tool} 符合 /${g.match}/${g.unless ? ` 且不符合 /${g.unless}/` : ''}`,
+      `　→ ${g.message}`,
+      ...(g.replay ? [`　提案時試比對這段對話：${g.replay.calls} 次工具呼叫中會命中 ${g.replay.hits} 次`] : []),
+    ]),
+  ].join('\n')
+}
+
+async function guardCommand($: EngineInterface, args: string[]) {
+  const [action = '', idText = '', modeText = ''] = args
+  if (action === '') return { text: await guardList($) }
+  if (action === 'suggest') return suggestGuards($)
+  const guards = await loadGuards($)
+  const g = guards.find(x => x.id === Number(idText))
+  const usage = `${tag} 用法 /handoff guard [suggest | on N | off N | mode N deny|remind | drop N]`
+  if (!g) return { text: idText ? `${tag} 沒有守門 #${idText}\n${await guardList($)}` : usage }
+  let updated: Guard[]
+  if (action === 'on' || action === 'off') updated = guards.map(x => (x === g ? { ...x, state: action } : x))
+  else if (action === 'drop') updated = guards.filter(x => x !== g)
+  else if (action === 'mode' && GUARD_MODES.some(m => m === modeText)) updated = guards.map(x => (x === g ? { ...x, mode: modeText as GuardMode } : x))
+  else return { text: usage }
+  await $.store.set(await guardsKey($), updated)
+  return { text: `${tag} 守門 #${g.id} 已${action === 'drop' ? '刪除' : '更新'}\n${await guardList($)}` }
+}
+
+async function guardSummary($: EngineInterface) {
+  const guards = await loadGuards($)
+  const count = (s: GuardState) => guards.filter(g => g.state === s).length
+  const candidates = (await guardCandidates($)).length
+  return `守門：啟用 ${count('on')}、草稿 ${count('proposed')}、停用 ${count('off')}` +
+    (candidates ? `；有 ${candidates} 條規則出現 ${GUARD_MIN_COUNT} 次以上還沒有守門（/handoff guard suggest）` : '')
+}
+
+async function recordHit($: EngineInterface, id: number) {
+  const guards = await loadGuards($)
+  await $.store.set(await guardsKey($), guards.map(g => (g.id === id ? { ...g, hits: g.hits + 1 } : g)))
 }
 
 export const register: Register = on => {
@@ -943,6 +1136,26 @@ export const register: Register = on => {
     } catch {
       return out
     }
+  })
+
+  // 守門：只有使用者核准（on）的才比對；hook 自己出錯時放行，不擋正常工作
+  on('tool.call', async ($, e, next) => {
+    let hit: Guard | undefined
+    try {
+      const text = inputText(e as Record<string, unknown>)
+      hit = (await loadGuards($)).find(g => g.state === 'on' && guardHits(g, e.tool, text))
+    } catch (err) {
+      $.ui.log(`${tag} 守門比對失敗，放行：${String(err)}`)
+    }
+    if (!hit) return next(e)
+    await recordHit($, hit.id)
+    const head = `${tag} 守門 #${hit.id}（${hit.rule}）：${hit.message}`
+    if (hit.mode === 'deny') {
+      $.ui.toast(`${tag} 守門 #${hit.id} 擋下 ${e.tool}：${hit.rule}`)
+      return { deny: `${head}\n使用者確定要照原樣執行時，請使用者先執行 /handoff guard off ${hit.id}。` }
+    }
+    const r = await next(e)
+    return r.deny === undefined ? { ...r, context: [...(r.context ?? []), head] } : r
   })
 
   on('turn.complete', async ($, e, next) => {
@@ -1049,7 +1262,7 @@ export const register: Register = on => {
 
   // 只有一個指令 /handoff（被佔用時是 /ctx-handoff），用子指令區分；不帶參數就顯示狀態和用法
   for (const command of ['handoff', 'ctx-handoff']) on('command.run', { command }, async ($, e) => {
-    const [sub = '', arg = ''] = e.args.trim().split(/\s+/)
+    const [sub = '', arg = '', ...rest] = e.args.trim().split(/\s+/)
     switch (sub) {
       case '': return { text: await status($) }
       case 'now': return handoffNow($)
@@ -1059,6 +1272,7 @@ export const register: Register = on => {
       case 'continue': return keepOld($)
       case 'resend': return resend($)
       case 'refresh': return refreshCommand($, arg)
+      case 'guard': return guardCommand($, [arg, ...rest])
       default: return { text: `${tag} 不認得「${sub}」\n${USAGE}` }
     }
   })
@@ -1075,6 +1289,7 @@ const USAGE = [
   '　/handoff resend           重新送出沒送達的 handoff（不 /clear）',
   '　/handoff refresh on|off   開關閒置時的快取刷新',
   '　/handoff distill on|off   開關背景整理',
+  '　/handoff guard            守門清單；suggest 從常犯規則提草稿；on|off|drop N；mode N deny|remind',
 ].join('\n')
 
 async function status($: EngineInterface) {
@@ -1095,6 +1310,7 @@ async function status($: EngineInterface) {
     ...(deferral ? [`handoff 延後：${deferral}`] : []),
     ...(snapshot ? [`背景（上次 Stop）：工作 ${snapshot.tasks}、一次性排程 ${snapshot.oneShot}、循環排程 ${snapshot.recurring}`] : []),
     await distillStatus($),
+    await guardSummary($),
     '',
     USAGE,
   ].join('\n')
