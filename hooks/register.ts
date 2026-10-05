@@ -1027,6 +1027,7 @@ function resetState() {
   confirming = undefined
   suggesting = false
   panelNote = undefined
+  panelOpen = false
   expanded.clear()
 }
 
@@ -1248,11 +1249,17 @@ async function changeGuard($: EngineInterface, id: number, change: 'on' | 'off' 
   return g
 }
 
-async function openPanel($: EngineInterface) {
+// /handoff panel：開或關輸入框上方的面板（再打一次就關）
+async function togglePanel($: EngineInterface) {
+  panelOpen = !panelOpen
   confirming = undefined
   panelNote = undefined
-  const r = await $.ui.open({ id: PANE, title: PANE_TITLE })
-  return { text: r.isPlaced ? `${tag} 面板已開啟` : `${tag} 面板沒有開成：${r.reason}` }
+  $.ui.invalidate('ui.render')
+  return {
+    text: panelOpen
+      ? `${tag} 面板已開在輸入框上方：直接點按鈕，或按 ctrl+x tab 用鍵盤操作；再打一次 /handoff panel 關閉`
+      : `${tag} 面板已關閉`,
+  }
 }
 
 async function guardSummary($: EngineInterface) {
@@ -1269,9 +1276,9 @@ async function recordHit($: EngineInterface, id: number) {
 }
 
 // ---------- 面板：/handoff panel，看最近整理的變動、刪掉記錯的筆記、核准守門 ----------
-const PANE = 'ctx-handoff'
-const PANE_TITLE = 'ctx-handoff：專案筆記與守門'
+// 畫在輸入框上方（AbovePrompt），不用 Pane：終端機全螢幕版面的 Pane 一定停靠在側邊
 const PANEL_MEMORY = 8
+let panelOpen = false
 // 等待確認刪除的項目、正在提守門草稿、上一個動作的結果（熱重載會清掉，無妨）
 let confirming: string | undefined
 let suggesting = false
@@ -1364,7 +1371,7 @@ function panelActions($: EngineInterface): PanelActions {
     ask: key => { confirming = key; panelNote = undefined; $.ui.invalidate('ui.render') },
     drop: key => { confirming = undefined; run(() => dropNote($, key)) },
     keep: head => run(() => keepNote($, head)),
-    close: () => { void $.ui.close({ id: PANE }) },
+    close: () => { panelOpen = false; $.ui.invalidate('ui.render') },
   }
 }
 
@@ -1424,8 +1431,11 @@ export const register: Register = on => {
     return r.deny === undefined ? { ...r, context: [...(r.context ?? []), head] } : r
   })
 
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) =>
-    panelTree($.ui.resolve(e), await panelView($, e.props.bodyColumns), panelActions($)))
+  // 面板沒開、或問卷佔著輸入框上方時，交給下層（其他 plugin 或引擎自己的）
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) =>
+    !panelOpen || e.props.hasSurvey
+      ? next(e)
+      : panelTree($.ui.resolve(e), await panelView($, e.props.bodyColumns), panelActions($)))
 
   on('turn.complete', async ($, e, next) => {
     const out = await next(e)
@@ -1542,7 +1552,7 @@ export const register: Register = on => {
       case 'resend': return resend($)
       case 'refresh': return refreshCommand($, arg)
       case 'guard': return guardCommand($, [arg, ...rest])
-      case 'panel': return openPanel($)
+      case 'panel': return togglePanel($)
       default: return { text: `${tag} 不認得「${sub}」\n${USAGE}` }
     }
   })
@@ -1559,7 +1569,7 @@ const USAGE = [
   '　/handoff resend           重新送出沒送達的 handoff（不 /clear）',
   '　/handoff refresh on|off   開關閒置時的快取刷新',
   '　/handoff distill on|off   開關背景整理',
-  '　/handoff panel            面板：最近整理的變動、刪掉記錯的筆記、核准守門',
+  '　/handoff panel            開關輸入框上方的面板：最近整理的變動、刪掉記錯的筆記、核准守門',
   '　/handoff guard           守門清單；suggest 從常犯規則提草稿；on|off|drop N；mode N deny|remind',
 ].join('\n')
 
