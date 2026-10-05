@@ -1,6 +1,6 @@
 import type { EngineInterface, Register, Timer } from 'claude-code'
 import { panelTree } from './panel'
-import type { PanelActions, PanelView } from './panel'
+import type { PanelActions, PanelTab, PanelView } from './panel'
 
 const tag = '[ctx-handoff]'
 
@@ -1028,6 +1028,7 @@ function resetState() {
   suggesting = false
   panelNote = undefined
   panelOpen = false
+  panelTab = 'guard'
   expanded.clear()
 }
 
@@ -1279,6 +1280,7 @@ async function recordHit($: EngineInterface, id: number) {
 // 畫在輸入框上方（AbovePrompt），不用 Pane：終端機全螢幕版面的 Pane 一定停靠在側邊
 const PANEL_MEMORY = 8
 let panelOpen = false
+let panelTab: PanelTab = 'guard'
 // 等待確認刪除的項目、正在提守門草稿、上一個動作的結果（熱重載會清掉，無妨）
 let confirming: string | undefined
 let suggesting = false
@@ -1293,6 +1295,7 @@ async function panelView($: EngineInterface, columns: number): Promise<PanelView
   return {
     file,
     columns,
+    tab: panelTab,
     expanded: [...expanded],
     guards: await loadGuards($),
     candidates: (await guardCandidates($)).length,
@@ -1364,6 +1367,7 @@ function panelActions($: EngineInterface): PanelActions {
         finally { suggesting = false }
       })
     },
+    tab: t => { panelTab = t; confirming = undefined; panelNote = undefined; $.ui.invalidate('ui.render') },
     toggle: key => {
       if (!expanded.delete(key)) expanded.add(key)
       $.ui.invalidate('ui.render')

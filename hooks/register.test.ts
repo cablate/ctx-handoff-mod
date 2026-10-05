@@ -1330,7 +1330,13 @@ test('守門：/handoff guard on|mode|drop 改狀態', async ($, on) => {
 // 面板畫在輸入框上方（AbovePrompt）；/handoff panel 打開後才畫
 const BAND_MOUNT = { plugin: 'ctx-handoff', surface: 'terminal' as const, component: 'AbovePrompt' as const,
   props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 120, scroll: { offset: 0, bodyRows: 20 }, view: {} } }
-const openPanel = async ($: Engine) => { await cmd($, 'panel'); return $.ui.mount(BAND_MOUNT) }
+// tab：打開後切到哪個分頁（預設守門）
+const openPanel = async ($: Engine, tab?: string) => {
+  await cmd($, 'panel')
+  const ui = await $.ui.mount(BAND_MOUNT)
+  if (tab) await ui.press({ key: `tab:${tab}` })
+  return ui
+}
 const PANEL_NOTES = ['# ctx-handoff 專案經驗', '', '## 記憶', '- [project] 舊的記憶', '- [feedback] 使用者要求每次都先跑測試', '', '## 規則', '', '### 推送前先跑 preflight（3 次）', '- 規則：先跑 preflight'].join('\n')
 
 test('面板：/handoff panel 在輸入框上方開關；問卷佔著時讓出；按關閉也會收起', async ($, on) => {
@@ -1345,14 +1351,14 @@ test('面板：/handoff panel 在輸入框上方開關；問卷佔著時讓出�
   const r = await cmd($, 'panel')
   expect(r.text).toContain('面板已開在輸入框上方')
   const ui = await $.ui.mount(BAND_MOUNT)
-  expect(await ui.find({ type: 'Text', text: /^守門$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'ctx-handoff' })).toBeDefined()
   await ui.unmount()
   const survey = await $.ui.mount({ ...BAND_MOUNT, props: { ...BAND_MOUNT.props, hasSurvey: true } })
-  expect(await survey.find({ type: 'Text', text: /^守門$/ })).toBeUndefined()
+  expect(await survey.find({ type: 'Text', text: 'ctx-handoff' })).toBeUndefined()
   await survey.unmount()
   const again = await $.ui.mount(BAND_MOUNT)
   await again.press({ key: 'close' })
-  expect(await again.find({ type: 'Text', text: /^守門$/ })).toBeUndefined()
+  expect(await again.find({ type: 'Text', text: 'ctx-handoff' })).toBeUndefined()
   await again.unmount()
   await cmd($, 'panel')
   expect((await cmd($, 'panel')).text).toContain('面板已關閉')
@@ -1362,21 +1368,22 @@ test('面板：列出守門與記憶，按核准後守門生效', async ($, on) 
   const w = world(on, 1000, 1_000_000, { 'guards:C--proj': [{ ...pushGuard('proposed'), replay: { hits: 1, calls: 4 } }] })
   w.files.set(NOTES_PATH, PANEL_NOTES)
   const ui = await openPanel($)
-  expect(await ui.find({ type: 'Text', text: /草稿・擋下\] 推送前先跑 preflight/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /草稿.*#1・擋下.*推送前先跑 preflight/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /4 次工具呼叫中命中 1 次/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /使用者要求每次都先跑測試/ })).toBeDefined()
   await ui.press({ key: 'on1' })
   await w.clock.advance(0)
   expect((w.get('guards:C--proj') as { state: string }[])[0]?.state).toBe('on')
   expect(await ui.find({ type: 'Text', text: /守門 #1 已核准/ })).toBeDefined()
   const blocked = await $.tool.call({ tool: 'Bash', command: 'git push' })
   expect(blocked.deny).toContain('守門 #1')
+  await ui.press({ key: 'tab:memory' })
+  expect(await ui.find({ type: 'Text', text: /使用者要求每次都先跑測試/ })).toBeDefined()
 })
 
 test('面板：刪除記憶要按兩次，寫檔前備份原檔', async ($, on) => {
   const w = world(on, 1000)
   w.files.set(NOTES_PATH, PANEL_NOTES)
-  const ui = await openPanel($)
+  const ui = await openPanel($, 'memory')
   const key = 'm:[feedback] 使用者要求每次都先跑測試'
   await ui.press({ key: `del:${key}` })
   await w.clock.advance(0)
@@ -1397,7 +1404,7 @@ test('面板：長記憶依寬度截成一行，按展開才顯示全文', async
   const w = world(on, 1000)
   const long = `- [reference] ${'很長的記憶內容'.repeat(40)}結尾`
   w.files.set(NOTES_PATH, ['# ctx-handoff 專案經驗', '', '## 記憶', long, '', '## 規則'].join('\n'))
-  const ui = await openPanel($)
+  const ui = await openPanel($, 'memory')
   const row = await ui.find({ type: 'Text', text: /很長的記憶內容/ })
   expect(row?.text).toContain('…')
   expect(row?.text).not.toContain('結尾')
@@ -1482,12 +1489,12 @@ test('記憶確認：confirm_memory 加一筆根據，封存的因此恢復帶�
 test('面板：封存的記憶另列一區，按留下就加一筆今天的根據並恢復', async ($, on) => {
   const w = world(on, 1000)
   w.files.set(NOTES, TIERED_NOTES)
-  const ui = await openPanel($)
-  expect(await ui.find({ type: 'Text', text: /封存（1 條，超過 30 天沒被證實/ })).toBeDefined()
+  const ui = await openPanel($, 'memory')
+  expect(await ui.find({ type: 'Text', text: /封存 1 條：超過 30 天沒被證實/ })).toBeDefined()
   await ui.press({ key: 'keep:[reference] 很久沒證實的位置' })
   await w.clock.advance(0)
   expect(w.files.get(NOTES) ?? '').toContain('  - 根據：1970-01-01｜在面板確認留下')
-  expect(await ui.find({ type: 'Text', text: /封存（/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^封存 \d+ 條/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /已留下：很久沒證實的位置/ })).toBeDefined()
 })
 
