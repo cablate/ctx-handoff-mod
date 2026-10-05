@@ -11,8 +11,8 @@ const usage = (tokens: number) =>
 const actionsReply = (...lines: (string | object)[]) =>
   ['=== ACTIONS ===', ...lines.map(l => (typeof l === 'string' ? l : JSON.stringify(l))), '=== END ==='].join('\n')
 const DISTILL_REPLY = actionsReply(
-  { op: 'add_memory', type: 'project', text: '使用者決定交接門檻維持 600k' },
-  { op: 'add_memory', type: 'project', text: 'api_key=abc123 不該被寫入' },
+  { op: 'add_memory', type: 'project', title: '使用者決定交接門檻維持 600k', evidence: '討論門檻後決定' },
+  { op: 'add_memory', type: 'project', title: 'api_key=abc123 不該被寫入', evidence: '測試' },
   { op: 'add_rule', name: '先實測再下結論', rule: '宣稱現行行為前先跑一次最小實測', applies: 'API 行為不確定時', not_applies: '文件已明確保證時', evidence: 'fork 能否讀寫靠實測才確定' },
 )
 let distillReply = DISTILL_REPLY
@@ -347,9 +347,9 @@ test('依編號套用新增／更新／刪除／確認，超出範圍的忽略�
   const w = world(on, 100_000, 1_000_000, { 'distill:S1': { turn: 3, anchor: '上次最後一則訊息' } }, [], 6)
   w.files.set(NOTES, EXISTING)
   distillReply = actionsReply(
-    { op: 'update_memory', id: 'M1', type: 'feedback', text: '改過的 A' },
+    { op: 'update_memory', id: 'M1', type: 'feedback', title: '改過的 A', quote: '上次最後一則訊息' },
     { op: 'delete_memory', id: 'M2', reason: '已過時' },
-    { op: 'add_memory', type: 'user', text: '新的偏好' },
+    { op: 'add_memory', type: 'user', title: '新的偏好', how: '照做', evidence: '使用者提過', quote: '更早的…訊息' },
     { op: 'delete_memory', id: 'M9', reason: '超出範圍' },
     { op: 'confirm_rule', id: 'R1', evidence: '又被證實一次' },
     { op: 'delete_rule', id: 'R2', reason: '被推翻' },
@@ -370,7 +370,14 @@ test('依編號套用新增／更新／刪除／確認，超出範圍的忽略�
   expect(w.forks[0]).toContain('M1 [feedback] 舊 A')
   expect(w.forks[0]).toContain('R2 規則二｜出現 2 次｜做 Y')
   const notes = w.files.get(NOTES) ?? ''
-  expect(notes).toContain('- [feedback] 改過的 A\n- [user] 新的偏好')
+  // 根據由程式補日期與 session；原話可用 … 省略中間
+  expect(notes).toContain([
+    '- [feedback] 改過的 A',
+    '  - 根據：1970-01-01 S1｜使用者原話：「上次最後一則訊息」',
+    '- [user] 新的偏好',
+    '  - 做法：照做',
+    '  - 根據：1970-01-01 S1｜使用者提過｜使用者原話：「更早的…訊息」',
+  ].join('\n'))
   expect(notes).not.toContain('舊 B')
   expect(notes).toContain('### 規則一（2 次）\n- 規則：做 X\n- 根據：1970-01-01 第一次\n- 根據：1970-01-01 又被證實一次')
   expect(notes).not.toContain('規則二')
@@ -739,7 +746,7 @@ test('S7 真實經驗檔複本：解析再輸出（扣掉更新時間）完全�
   w.files.set(NOTES, NOTES_FIXTURE)
   const items = NOTES_FIXTURE.split('\n').filter(l => l.startsWith('- [')).length
   // 先加一條再刪掉：兩次都經過 parse → render，結果要回到原樣
-  distillReply = actionsReply({ op: 'add_memory', type: 'project', text: '暫時的一條' })
+  distillReply = actionsReply({ op: 'add_memory', type: 'project', title: '暫時的一條', evidence: '測試' })
   await distillNow($)
   expect(w.files.get(NOTES) ?? '').toContain('暫時的一條')
   n = 9
@@ -750,7 +757,7 @@ test('S7 真實經驗檔複本：解析再輸出（扣掉更新時間）完全�
   expect(stripStamp(out)).toBe(stripStamp(NOTES_FIXTURE))
 })
 
-test('S7 記憶的延續行與自訂區段原樣保留；同名規則的 ADD 略過', async ($, on) => {
+test('S7 記憶的欄位原樣保留、認不得的延續行併進標題、自訂區段原樣保留；同名規則的 ADD 略過', async ($, on) => {
   const w = world(on, 100_000, 1_000_000, {}, [], 5)
   w.files.set(NOTES, [
     '# ctx-handoff 專案經驗',
@@ -763,6 +770,9 @@ test('S7 記憶的延續行與自訂區段原樣保留；同名規則的 ADD 略
     '  延續行 A',
     '  - 縮排子項',
     '- [project] 第二條',
+    '  - 做法：照做',
+    '  - 理由：因為',
+    '  - 根據：2026-01-01 abc｜發生過',
     '',
     '## 規則',
     '',
@@ -776,14 +786,24 @@ test('S7 記憶的延續行與自訂區段原樣保留；同名規則的 ADD 略
     '',
   ].join('\n'))
   distillReply = actionsReply(
-    { op: 'add_memory', type: 'user', text: '新增的一條' },
+    { op: 'add_memory', type: 'project', title: '新增的一條', evidence: '新的' },
     { op: 'add_rule', name: '規則甲', rule: '重複的內容', applies: 'x', not_applies: 'y', evidence: '重複' },
     { op: 'add_rule', name: '規則乙', rule: '做乙', applies: 'x', not_applies: 'y', evidence: '新的' },
   )
   await distillNow($)
-  expect(w.forks[0]).toContain('M1 [user] 第一條\n  延續行 A\n  - 縮排子項')
+  expect(w.forks[0]).toContain('M1 [user] 第一條 延續行 A - 縮排子項\nM2 [project] 第二條｜做法：照做｜理由：因為｜根據：2026-01-01 abc｜發生過')
   const out = w.files.get(NOTES) ?? ''
-  expect(out).toContain('## 記憶\n- [user] 第一條\n  延續行 A\n  - 縮排子項\n- [project] 第二條\n- [user] 新增的一條\n')
+  expect(out).toContain([
+    '## 記憶',
+    '- [user] 第一條 延續行 A - 縮排子項',
+    '- [project] 第二條',
+    '  - 做法：照做',
+    '  - 理由：因為',
+    '  - 根據：2026-01-01 abc｜發生過',
+    '- [project] 新增的一條',
+    '  - 根據：1970-01-01 S1｜新的',
+    '',
+  ].join('\n'))
   expect(out).toContain('### 規則甲（2 次）\n- 規則：做甲\n- 根據：2026-01-01 一\n')
   expect(out).not.toContain('重複的內容')
   expect(out.split('### 規則甲').length).toBe(2)
@@ -906,7 +926,7 @@ const lastOf =(w: World) => w.get('distill:last:C--proj') as { changes: string[]
 test('JSONL 一行壞掉、一個不認得的 op：有效的照套用，記下丟棄 2 行與樣本，狀態看得到', async ($, on) => {
   const w = world(on, 100_000, 1_000_000, {}, [], 5)
   distillReply = actionsReply(
-    { op: 'add_memory', type: 'user', text: '有效的一條' },
+    { op: 'add_memory', type: 'project', title: '有效的一條', evidence: 'x' },
     '{這不是 JSON',
     { op: 'explode', text: '不認得的 op' },
     '',
@@ -914,7 +934,7 @@ test('JSONL 一行壞掉、一個不認得的 op：有效的照套用，記下�
   )
   const r = await distillNow($)
   const notes = w.files.get(NOTES) ?? ''
-  expect(notes).toContain('- [user] 有效的一條')
+  expect(notes).toContain('- [project] 有效的一條')
   expect(notes).toContain('### 有效規則（1 次）\n- 規則：做 Z\n- 適用：a｜不適用：b\n- 根據：1970-01-01 c')
   const last = lastOf(w)
   expect(last.rejected.count).toBe(2)
@@ -940,8 +960,8 @@ test('JSONL 樣本最多 3 個；長的行保留頭 100 字與尾 50 字', async
 test('疑似金鑰的動作整行丟棄（任何欄位），樣本不記內容', async ($, on) => {
   const w = world(on, 100_000, 1_000_000, {}, [], 5)
   distillReply = actionsReply(
-    { op: 'add_memory', type: 'user', text: '正常的一條' },
-    { op: 'add_memory', type: 'user', text: '金鑰 ghp_abcdefghijklmnop' },
+    { op: 'add_memory', type: 'project', title: '正常的一條', evidence: 'x' },
+    { op: 'add_memory', type: 'project', title: '金鑰 ghp_abcdefghijklmnop', evidence: 'x' },
     { op: 'add_rule', name: '規則', rule: '做事', applies: 'a', not_applies: 'b', evidence: 'password=hunter2' },
     { op: 'delete_memory', id: 'M1', reason: 'token: abc' },
     '這行不是 JSON 但有 api_key=zzz',
@@ -949,7 +969,7 @@ test('疑似金鑰的動作整行丟棄（任何欄位），樣本不記內容',
   w.files.set(NOTES, EXISTING)
   await distillNow($)
   const notes = w.files.get(NOTES) ?? ''
-  expect(notes).toContain('- [user] 正常的一條')
+  expect(notes).toContain('- [project] 正常的一條')
   expect(notes).toContain('舊 A')
   expect(notes).not.toMatch(/ghp_|hunter2|api_key/)
   const { rejected } = lastOf(w)
@@ -959,10 +979,10 @@ test('疑似金鑰的動作整行丟棄（任何欄位），樣本不記內容',
 
 test('欄位裡的換行會收成一個空格，不會寫出多行或新標題', async ($, on) => {
   const w = world(on, 100_000, 1_000_000, {}, [], 5)
-  distillReply = actionsReply({ op: 'add_memory', type: 'user', text: '第一行\n## 假標題\n第三行' })
+  distillReply = actionsReply({ op: 'add_memory', type: 'project', title: '第一行\n## 假標題\n第三行', evidence: 'x' })
   await distillNow($)
   const notes = w.files.get(NOTES) ?? ''
-  expect(notes).toContain('- [user] 第一行 ## 假標題 第三行')
+  expect(notes).toContain('- [project] 第一行 ## 假標題 第三行')
   expect(notes.match(/^## 記憶/gm)?.length).toBe(1)
 })
 
@@ -997,7 +1017,7 @@ test('整理提示：繁體中文指示、只有這個工作區的記憶與規�
   expect(p).not.toContain('P2')
   expect(p).toContain('=== ACTIONS ===')
   expect(p).toContain('=== END ===')
-  expect(p).toContain('{"op":"add_memory","type":"project","text":"…"}')
+  expect(p).toContain('{"op":"add_memory","type":"feedback","title":"…","how":"…","why":"…","evidence":"…","quote":"…"}')
   expect(p).toContain('{"op":"delete_rule","id":"R4","reason":"…"}')
   // 碰過別的 repo 也只寫這個工作區的經驗檔
   expect(w.files.get(ALPHA_NOTES) ?? '').not.toContain('使用者決定交接門檻維持 600k')
@@ -1193,8 +1213,8 @@ test('worktree 的 gitdir 是相對路徑：仍對到主工作樹', async ($, on
 test('整理有變動：跳出提示，寫出項數與經驗檔的完整路徑；沒有變動不提示', async ($, on) => {
   const w = world(on, 100_000, 1_000_000, {}, [], 5)
   distillReply = actionsReply(
-    { op: 'add_memory', type: 'user', text: '第一條新記憶' },
-    { op: 'add_memory', type: 'user', text: '第二條新記憶' },
+    { op: 'add_memory', type: 'project', title: '第一條新記憶', evidence: 'x' },
+    { op: 'add_memory', type: 'project', title: '第二條新記憶', evidence: 'x' },
   )
   await distillNow($)
   const toast = w.toasts.find(t => t.includes('經驗已更新'))
@@ -1321,7 +1341,7 @@ test('面板：刪除記憶要按兩次，寫檔前備份原檔', async ($, on) 
   const w = world(on, 1000)
   w.files.set(NOTES_PATH, PANEL_NOTES)
   const ui = await $.ui.mount(PANE_MOUNT)
-  const key = 'm:- [feedback] 使用者要求每次都先跑測試'
+  const key = 'm:[feedback] 使用者要求每次都先跑測試'
   await ui.press({ key: `del:${key}` })
   await w.clock.advance(0)
   // 第一次只標記，不寫檔
@@ -1347,8 +1367,62 @@ test('面板：長記憶依寬度截成一行，按展開才顯示全文', async
   expect(row?.text).not.toContain('結尾')
   // 中文一字兩格：截短後不超過面板寬度
   expect([...(row?.text ?? '')].reduce((n, ch) => n + ((ch.codePointAt(0) ?? 0) >= 0x1100 ? 2 : 1), 0)).toBeLessThanOrEqual(120)
-  await ui.press({ key: `t:m:${long}` })
+  await ui.press({ key: `t:m:${long.slice(2)}` })
   expect(await ui.find({ type: 'Text', text: /結尾$/ })).toBeDefined()
-  await ui.press({ key: `t:m:${long}` })
+  await ui.press({ key: `t:m:${long.slice(2)}` })
   expect(await ui.find({ type: 'Text', text: /結尾$/ })).toBeUndefined()
+})
+
+// ---------- 記憶的格式：給人看的標題＋給整理看的根據 ----------
+test('記憶：user／feedback 要附使用者訊息裡找得到的原話；本程式注入的訊息不算', async ($, on) => {
+  const w = world(on, 100_000, 1_000_000, {}, [], 5)
+  w.rows.push(
+    { role: 'user', text: '以後回報都用條列', toolUses: [] },
+    { role: 'user', text: '[ctx-handoff] 上一段對話的 handoff：使用者要求每次都跑全套測試', toolUses: [] },
+  )
+  distillReply = actionsReply(
+    { op: 'add_memory', type: 'user', title: '回報用條列', evidence: '使用者說的', quote: '以後回報 都用條列' },
+    { op: 'add_memory', type: 'feedback', title: '沒有原話', evidence: 'x' },
+    { op: 'add_memory', type: 'user', title: '捏造的原話', evidence: 'x', quote: '每次都要寫測試' },
+    { op: 'add_memory', type: 'feedback', title: '引用 handoff', evidence: 'x', quote: '每次都跑全套測試' },
+  )
+  await distillNow($)
+  const notes = w.files.get(NOTES) ?? ''
+  expect(notes).toContain('- [user] 回報用條列')
+  expect(notes).toContain('使用者原話：「以後回報 都用條列」')
+  expect(notes).not.toMatch(/沒有原話|捏造的原話|引用 handoff/)
+  const { rejected } = lastOf(w)
+  expect(rejected.count).toBe(3)
+  expect(rejected.samples[0]).toStartWith('feedback 類缺少使用者原話 quote')
+  expect(rejected.samples[1]).toStartWith('quote 不在使用者訊息裡')
+})
+
+test('記憶與規則：超過字數上限整條丟掉，記下原因', async ($, on) => {
+  const w = world(on, 100_000, 1_000_000, {}, [], 5)
+  distillReply = actionsReply(
+    { op: 'add_memory', type: 'project', title: '長'.repeat(61), evidence: 'x' },
+    { op: 'add_memory', type: 'project', title: '剛好', how: '做'.repeat(101), evidence: 'x' },
+    { op: 'add_rule', name: '規則', rule: '步'.repeat(151), applies: 'a', not_applies: 'b', evidence: 'c' },
+    { op: 'add_memory', type: 'project', title: '長'.repeat(60), evidence: 'x' },
+  )
+  await distillNow($)
+  const notes = w.files.get(NOTES) ?? ''
+  expect(notes).toContain(`- [project] ${'長'.repeat(60)}`)
+  expect(notes).not.toContain('剛好')
+  const { rejected } = lastOf(w)
+  expect(rejected.count).toBe(3)
+  expect(rejected.samples).toEqual([
+    expect.stringMatching(/^title 超過 60 字/),
+    expect.stringMatching(/^how 超過 100 字/),
+    expect.stringMatching(/^rule 超過 150 字/),
+  ])
+})
+
+test('記憶帶入新對話：有標題、做法、理由，不帶根據', async ($, on) => {
+  const w = world(on, 1000)
+  w.files.set(NOTES, ['# ctx-handoff 專案經驗', '', '## 記憶', '- [project] 標題', '  - 做法：照做', '  - 理由：因為', '  - 根據：2026-01-01 abc｜只給整理看', '', '## 規則'].join('\n'))
+  const r = await $.prompt.context({ blocks: [] })
+  const text = r.blocks.find(b => b.name === 'ctxHandoffProject')?.text ?? ''
+  expect(text).toContain(['- [project] 標題', '  - 做法：照做', '  - 理由：因為'].join('\n'))
+  expect(text).not.toContain('只給整理看')
 })

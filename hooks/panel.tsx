@@ -18,7 +18,8 @@ export type PanelView = {
   suggesting: boolean
   lastDistill?: { at: string; why: string; changes: string[] }
   // 最新的幾條記憶（原文）與總數
-  memory: string[]
+  // head：[類型] 標題；detail：做法、理由、根據各一行（展開才顯示）
+  memory: { head: string; detail: string[] }[]
   memoryTotal: number
   rules: { name: string; count: number }[]
   // 展開全文的項目（m:<記憶原文>／g<守門編號>／changes）
@@ -134,13 +135,20 @@ export function panelTree(ui: Elements, v: PanelView, act: PanelActions) {
       <Text> </Text>
       <Text bold>記憶（最新 {v.memory.length} 條，共 {v.memoryTotal} 條）</Text>
       {v.memory.map(m => (
-        <Box key={`m:${m}`} flexDirection="column">
+        <Box key={`m:${m.head}`} flexDirection="column">
           <Box>
-            <Text>　{fit(m, short)} </Text>
-            {toggle(`m:${m}`)}
-            {dropButtons(`m:${m}`)}
+            <Text>　{fit(m.head, short)} </Text>
+            {m.detail.length || fit(m.head, short) !== oneLine(m.head) ? toggle(`m:${m.head}`) : null}
+            {dropButtons(`m:${m.head}`)}
           </Box>
-          {isOpen(`m:${m}`) ? full(`m:${m}`, m) : null}
+          {isOpen(`m:${m.head}`)
+            ? (
+              <Box flexDirection="column" paddingLeft={2}>
+                {fit(m.head, short) !== oneLine(m.head) ? <Text>{oneLine(m.head)}</Text> : null}
+                {m.detail.map((d, i) => <Text key={`d${i}`} dimColor={d.startsWith('根據：')}>{d}</Text>)}
+              </Box>
+            )
+            : null}
         </Box>
       ))}
 

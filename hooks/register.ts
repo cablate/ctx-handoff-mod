@@ -43,16 +43,39 @@ const INJECT_MIN_COUNT = 2
 const INJECT_RULES = 15
 const EVIDENCE_KEEP = 3
 const NOTE_TAG = '[ctx-handoff 專案經驗]'
+// 記憶給人看：標題是一句結論，做法／理由各一句；根據給整理模型判斷用，不帶入新對話
+const TITLE_MAX = 60
+const FIELD_MAX = 100
+const EVIDENCE_MAX = 200
+const QUOTE_MAX = 120
+const RULE_NAME_MAX = 40
+const RULE_TEXT_MAX = 150
+// 這兩類講的是使用者說過的話：一定要附對話裡找得到的原話
+const QUOTE_TYPES = ['user', 'feedback']
 type Rule = { name: string; count: number; body: string[] }
+type Memory = { type: string; title: string; how?: string; why?: string; evidence: string[] }
 // extra：不認得的 `## ` 區段（含標題行）原樣保留，輸出在規則之後
-type Notes = { memory: string[]; rules: Rule[]; extra: string[] }
+type Notes = { memory: Memory[]; rules: Rule[]; extra: string[] }
+
+const MEM_FIELDS = { 做法: 'how', 理由: 'why' } as const
+// 經驗檔裡的一條記憶：標題行＋縮排的欄位行；evidence=false 給新對話帶入用
+const memLines = (m: Memory, evidence = true) => [
+  `- ${m.type ? `[${m.type}] ` : ''}${m.title}`,
+  ...(m.how ? [`  - 做法：${m.how}`] : []),
+  ...(m.why ? [`  - 理由：${m.why}`] : []),
+  ...(evidence ? m.evidence.map(e => `  - 根據：${e}`) : []),
+]
+const memHead = (m: Memory) => `${m.type ? `[${m.type}] ` : ''}${m.title}`
+const memOneLine = (m: Memory) =>
+  [memHead(m), m.how && `做法：${m.how}`, m.why && `理由：${m.why}`, m.evidence.length && `根據：${m.evidence.join('；')}`]
+    .filter(Boolean).join('｜')
 
 const ruleText = (r: Rule) =>
   (r.body.find(l => l.startsWith('- 規則：')) ?? r.body[0] ?? '').replace(/^- 規則：/, '').trim()
 
 // 整理提示：這個工作區現有的記憶與規則（編號只在這次有效）
 function distillPrompt(anchor: string | undefined, notes: Notes) {
-  const mem = notes.memory.length ? notes.memory.map((m, i) => `M${i + 1} ${m.replace(/^- /, '')}`) : ['（無）']
+  const mem = notes.memory.length ? notes.memory.map((m, i) => `M${i + 1} ${memOneLine(m)}`) : ['（無）']
   const rules = notes.rules.length ? notes.rules.map((r, i) => `R${i + 1} ${r.name}｜出現 ${r.count} 次｜${ruleText(r)}`) : ['（無）']
   return [
     '你在背景整理使用者訊息裡附上的對話紀錄，目標是讓這個工作區之後的工作越做越好。你沒有工具，只輸出指定格式，由程式寫檔。',
@@ -70,21 +93,27 @@ function distillPrompt(anchor: string | undefined, notes: Notes) {
     '',
     '目前的規則：', ...rules,
     '',
-    '一、記憶：之後的工作值得記住、已經被證實的事。',
+    '一、記憶：之後的工作值得記住、已經被證實的事。人會在面板上只看標題，要一眼看懂。',
     '類型：user（使用者偏好與工作方式）、feedback（使用者修正過、或確認可行的做法）、project（無法從程式碼或 git 推導出的決定、限制與理由）、reference（外部資訊在哪裡）。',
+    `- title：一句結論，40 字以內（超過 ${TITLE_MAX} 字整條丟掉），只看這行就知道要做什麼或要知道什麼；不寫背景故事、日期、PR 編號、原話`,
+    `- how（做法）、why（理由）：各一句、${FIELD_MAX} 字以內，可省略；不寫故事、原話、進度`,
+    `- evidence（根據）：發生了什麼、在哪裡驗證過（${EVIDENCE_MAX} 字以內），給之後整理判斷用；日期與 session 由程式補上，不用寫`,
+    '- 一條只講一件事：一段對話學到三件事就寫三條',
+    '- user、feedback 一定要附 quote：使用者在對話裡的原話，照抄（可用 … 省略中間），程式會比對使用者訊息；找不到原話就表示不是使用者說的，改成 project 或 reference，或不要寫。助理自己的做法不是使用者要求',
     '不收：能從程式碼推導的、CLAUDE.md 已有的、進度和待辦、會過時的狀態、這次改了哪些程式、推測、任何金鑰或憑證。',
     '自問：一個月後在這個工作區開新對話，這條還正確、還用得上嗎？',
     '和現有記憶比對：意思相同就不動；補充或修正就 update_memory；被推翻就 delete_memory；優先 update_memory，不要寫出換句話說的重複條目。',
     `記憶超過 ${MEMORY_SOFT_MAX} 條時，合併相近的、刪掉最不重要的。`,
     '',
     '二、規則：可重用的做法，寫成可以直接採用的指令。',
+    `name 是一句話的標題（${RULE_NAME_MAX} 字以內）；rule 寫做法（${RULE_TEXT_MAX} 字以內），步驟多時指向工具或文件，不要把整份清單塞進來。`,
     '只收三段都有的：問題或摩擦 → 實際行動 → 觀察到的結果。',
     '同一個教訓再次被證實（使用者確認，或工具結果證明有效），就用 confirm_rule 增加出現次數，不要新增。',
     '',
     '輸出格式（照抄標記；一行一個 JSON 物件，不要其他文字；沒有變動就留空）：',
     ACTIONS_START,
-    '{"op":"add_memory","type":"project","text":"…"}',
-    '{"op":"update_memory","id":"M3","type":"feedback","text":"…"}',
+    '{"op":"add_memory","type":"feedback","title":"…","how":"…","why":"…","evidence":"…","quote":"…"}',
+    '{"op":"update_memory","id":"M3","type":"project","title":"…","how":"…","why":"…","evidence":"新的根據，可省略"}',
     '{"op":"delete_memory","id":"M7","reason":"…"}',
     '{"op":"add_rule","name":"…","rule":"…","applies":"…","not_applies":"…","evidence":"…"}',
     '{"op":"confirm_rule","id":"R2","evidence":"…"}',
@@ -125,9 +154,22 @@ function parseNotes(text: string): Notes {
     }
     if (section === 'extra') { notes.extra.push(line); continue }
     if (section === 'memory') {
-      if (line.startsWith('- ')) { notes.memory.push(line); inItem = true }
-      else if (inItem && line.trim() && !line.startsWith('#')) notes.memory[notes.memory.length - 1] += `\n${line}`
-      else inItem = false
+      const cur = notes.memory.at(-1)
+      const f = /^\s+- (做法|理由|根據)：(.*)$/.exec(line)
+      const head = /^- (?:\[(\w+)\] )?(.*)$/.exec(line)
+      if (f && cur && inItem) {
+        const [, label = '', value = ''] = f
+        if (label === '根據') cur.evidence.push(value.trim())
+        else cur[MEM_FIELDS[label as keyof typeof MEM_FIELDS]] = value.trim()
+      } else if (head) {
+        notes.memory.push({ type: head[1] ?? '', title: (head[2] ?? '').trim(), evidence: [] })
+        inItem = true
+      } else if (cur && inItem && line.trim() && !line.startsWith('#')) {
+        // 認不得的延續行併進標題，不丟內容
+        cur.title += ` ${line.trim()}`
+      } else {
+        inItem = false
+      }
     }
     if (section !== 'rules') continue
     const head = RULE_HEAD.exec(line)
@@ -153,7 +195,7 @@ function renderNotes(notes: Notes, stamp: string) {
     `> 最後更新：${stamp}`,
     '',
     '## 記憶',
-    ...notes.memory,
+    ...notes.memory.flatMap(m => memLines(m)),
     '',
     '## 規則',
     ...notes.rules.flatMap(r => ['', `### ${r.name}（${r.count} 次）`, ...r.body]),
@@ -169,9 +211,10 @@ const ACTIONS_END = '=== END ==='
 const MEMORY_TYPES = ['user', 'feedback', 'project', 'reference']
 type Rejected = { count: number; samples: string[] }
 // i：原本清單裡的索引（編號只在這次整理有效，不隨刪除位移）
+type MemoryFields = { type: string; title: string; how?: string; why?: string; evidence?: string; quote?: string }
 type Action =
-  | { op: 'add_memory'; type: string; text: string }
-  | { op: 'update_memory'; i: number; type: string; text: string }
+  | ({ op: 'add_memory'; evidence: string } & MemoryFields)
+  | ({ op: 'update_memory'; i: number } & MemoryFields)
   | { op: 'delete_memory'; i: number }
   | { op: 'add_rule'; name: string; rule: string; applies: string; notApplies: string; evidence: string }
   | { op: 'confirm_rule'; i: number; evidence: string }
@@ -181,8 +224,22 @@ type Action =
 // 非空字串：換行與連續空白收成一個空格，避免一個欄位寫出多行、破壞 md 結構
 const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.replace(/\s+/g, ' ').trim() : undefined)
 
+// 使用者原話：以 … 分段，每段（去掉空白後）都要出現在使用者訊息裡
+const squash = (s: string) => s.replace(/\s+/g, '')
+function isQuoted(quote: string, userText: string) {
+  const parts = quote.split(/…|\.\.\./).map(squash).filter(p => p.length >= 2)
+  return parts.length > 0 && parts.every(p => userText.includes(p))
+}
+
+// 超過上限的欄位名稱（中英文都算一個字）
+const tooLong = (fields: Record<string, [string | undefined, number]>) => {
+  const over = Object.entries(fields).filter(([, [v, max]]) => v !== undefined && [...v].length > max).map(([k, [, max]]) => `${k} 超過 ${max} 字`)
+  return over.length ? over.join('、') : undefined
+}
+
 // 一行 JSON 轉成動作；無效時回傳原因（記進丟棄樣本，事後查得出是哪一種）
-function toAction(o: Record<string, unknown>, notes: Notes): Action | string {
+// userText：這段對話使用者自己送出的訊息（去掉空白），比對 quote 用
+function toAction(o: Record<string, unknown>, notes: Notes, userText: string): Action | string {
   const ref = (kind: 'M' | 'R') => {
     const m = typeof o.id === 'string' ? /^([MR])(\d+)$/.exec(o.id) : null
     if (!m || m[1] !== kind) return `id 不是 ${kind}#`
@@ -196,16 +253,27 @@ function toAction(o: Record<string, unknown>, notes: Notes): Action | string {
     const names = Object.entries(fields).filter(([, v]) => !v).map(([k]) => k)
     return names.length ? `缺少 ${names.join('、')}` : undefined
   }
+  // 記憶的欄位：長度上限；user／feedback 的原話要在使用者訊息裡找得到（已有原話的舊條目更新時可省略）
+  const memory = (hasQuote: boolean) => {
+    const [title, how, why, evidence, quote] = [o.title, o.how, o.why, o.evidence, o.quote].map(str)
+    const bad = needType() ?? missing({ title })
+      ?? tooLong({ title: [title, TITLE_MAX], how: [how, FIELD_MAX], why: [why, FIELD_MAX], evidence: [evidence, EVIDENCE_MAX], quote: [quote, QUOTE_MAX] })
+    if (bad) return bad
+    if (quote !== undefined && !isQuoted(quote, userText)) return 'quote 不在使用者訊息裡'
+    if (QUOTE_TYPES.includes(type!) && quote === undefined && !hasQuote) return `${type} 類缺少使用者原話 quote`
+    return { type: type!, title: title!, ...(how ? { how } : {}), ...(why ? { why } : {}), ...(evidence ? { evidence } : {}), ...(quote ? { quote } : {}) }
+  }
   switch (o.op) {
     case 'add_memory': {
-      const text = str(o.text)
-      return needType() ?? missing({ text }) ?? { op: 'add_memory', type: type!, text: text! }
+      const m = memory(false)
+      if (typeof m === 'string') return m
+      return missing({ evidence: m.evidence }) ?? { op: 'add_memory', ...m, evidence: m.evidence! }
     }
     case 'update_memory': {
       const r = ref('M')
-      const text = str(o.text)
       if (typeof r === 'string') return r
-      return needType() ?? missing({ text }) ?? { op: 'update_memory', ...r, type: type!, text: text! }
+      const m = memory(notes.memory[r.i]!.evidence.some(e => e.includes('使用者原話')))
+      return typeof m === 'string' ? m : { op: 'update_memory', ...r, ...m }
     }
     case 'delete_memory': {
       const r = ref('M')
@@ -216,6 +284,7 @@ function toAction(o: Record<string, unknown>, notes: Notes): Action | string {
       const name = str(o.name)?.replace(/（\d+ 次）$/, '').trim()
       const [rule, applies, notApplies, evidence] = [o.rule, o.applies, o.not_applies, o.evidence].map(str)
       return missing({ name, rule, applies, not_applies: notApplies, evidence })
+        ?? tooLong({ name: [name, RULE_NAME_MAX], rule: [rule, RULE_TEXT_MAX] })
         ?? { op: 'add_rule', name: name!, rule: rule!, applies: applies!, notApplies: notApplies!, evidence: evidence! }
     }
     case 'confirm_rule': {
@@ -228,7 +297,7 @@ function toAction(o: Record<string, unknown>, notes: Notes): Action | string {
       const r = ref('R')
       if (typeof r === 'string') return r
       const rule = str(o.rule)
-      return missing({ rule }) ?? { op: 'update_rule', ...r, rule: rule! }
+      return missing({ rule }) ?? tooLong({ rule: [rule, RULE_TEXT_MAX] }) ?? { op: 'update_rule', ...r, rule: rule! }
     }
     case 'delete_rule': {
       const r = ref('R')
@@ -253,7 +322,7 @@ const sampleOf = (why: string, line: string) =>
 
 // 只解析兩個標記之間的行，一行一個 JSON；無效的行丟棄並記數與最多 3 個樣本（含原因）。
 // 疑似金鑰的行整行丟棄，樣本不記內容（樣本會寫進 store）
-function parseActions(text: string, notes: Notes): { actions: Action[]; rejected: Rejected } {
+function parseActions(text: string, notes: Notes, userText = ''): { actions: Action[]; rejected: Rejected } {
   const actions: Action[] = []
   const rejected: Rejected = { count: 0, samples: [] }
   // secret：解析後的值疑似金鑰。值可能是跳脫寫法（\u0073k-…），原始行比對不到，所以不能只靠再比對一次
@@ -277,7 +346,7 @@ function parseActions(text: string, notes: Notes): { actions: Action[]; rejected
     if (!o || typeof o !== 'object' || Array.isArray(o)) { reject('不是 JSON 物件', line); continue }
     const rec = o as Record<string, unknown>
     if (hasSecret(rec)) { reject('疑似金鑰', '', true); continue }
-    const a = toAction(rec, notes)
+    const a = toAction(rec, notes, userText)
     if (typeof a === 'string') reject(a, line)
     else actions.push(a)
   }
@@ -285,26 +354,43 @@ function parseActions(text: string, notes: Notes): { actions: Action[]; rejected
 }
 
 // 依序套用已驗證的動作；刪除先標記成 undefined，編號不會因此位移
-function applyActions(actions: Action[], n: Notes, day: string): { notes: Notes; changes: Change[] } {
+// sid：寫進記憶根據的 session（前 8 碼），需要時回對話檔查全文
+function applyActions(actions: Action[], n: Notes, day: string, sid = ''): { notes: Notes; changes: Change[] } {
   const field = (label: string, value: string) => `- ${label}：${value}`
-  const memory = [...n.memory] as (string | undefined)[]
-  const addedMem: string[] = []
+  const memory = n.memory.map(m => ({ ...m, evidence: [...m.evidence] })) as (Memory | undefined)[]
+  const addedMem: Memory[] = []
+  const stamp = `${day}${sid ? ` ${sid.slice(0, 8)}` : ''}`
+  const evidenceOf = (a: MemoryFields) =>
+    a.evidence || a.quote ? `${stamp}｜${[a.evidence, a.quote && `使用者原話：「${a.quote}」`].filter(Boolean).join('｜')}` : undefined
+  const sameTitle = (a: Memory) => (b: Memory | undefined) => b?.title === a.title
   const rules = n.rules.map(r => ({ ...r, body: [...r.body] })) as (Rule | undefined)[]
   const added: Rule[] = []
   const changes: Change[] = []
   for (const a of actions) {
     switch (a.op) {
       case 'add_memory': {
-        const item = `- [${a.type}] ${a.text}`
-        if (!memory.includes(item) && !addedMem.includes(item)) { addedMem.push(item); changes.push(`新增記憶：[${a.type}] ${a.text}`) }
+        const item: Memory = {
+          type: a.type, title: a.title, ...(a.how ? { how: a.how } : {}), ...(a.why ? { why: a.why } : {}), evidence: [evidenceOf(a)!],
+        }
+        // 同標題已存在：略過
+        if (!memory.some(sameTitle(item)) && !addedMem.some(sameTitle(item))) { addedMem.push(item); changes.push(`新增記憶：${memHead(item)}`) }
         break
       }
-      case 'update_memory':
-        if (memory[a.i] !== undefined) { memory[a.i] = `- [${a.type}] ${a.text}`; changes.push(`更新記憶：[${a.type}] ${a.text}`) }
+      case 'update_memory': {
+        const old = memory[a.i]
+        if (old === undefined) break
+        const e = evidenceOf(a)
+        const item: Memory = {
+          type: a.type, title: a.title, ...(a.how ? { how: a.how } : {}), ...(a.why ? { why: a.why } : {}),
+          evidence: (e ? [...old.evidence, e] : old.evidence).slice(-EVIDENCE_KEEP),
+        }
+        memory[a.i] = item
+        changes.push(`更新記憶：${memHead(item)}`)
         break
+      }
       case 'delete_memory': {
         const m = memory[a.i]
-        if (m !== undefined) { changes.push(`刪除記憶：${m.replace(/^- /, '')}`); memory[a.i] = undefined }
+        if (m !== undefined) { changes.push(`刪除記憶：${memHead(m)}`); memory[a.i] = undefined }
         break
       }
       case 'add_rule': {
@@ -345,7 +431,7 @@ function applyActions(actions: Action[], n: Notes, day: string): { notes: Notes;
   }
   return {
     notes: {
-      memory: [...memory.filter((m): m is string => m !== undefined), ...addedMem],
+      memory: [...memory.filter((m): m is Memory => m !== undefined), ...addedMem],
       rules: [...rules.filter((r): r is Rule => r !== undefined), ...added],
       extra: n.extra,
     },
@@ -362,7 +448,8 @@ function contextText(notes: Notes, file: string) {
   return [
     `${NOTE_TAG} 這個工作區累積的${[memory.length ? '記憶' : '', rules.length ? '規則' : ''].filter(Boolean).join('與')}，正本在 ${file}，可以直接編輯。`,
     '這是過去對話整理出的參考；和使用者當下的指示衝突時，以使用者為準。',
-    ...(memory.length ? ['', '## 記憶', ...memory] : []),
+    // 根據只給整理模型判斷用，不帶入新對話
+    ...(memory.length ? ['', '## 記憶', ...memory.flatMap(m => memLines(m, false))] : []),
     ...(rules.length ? ['', `## 規則（出現 ${INJECT_MIN_COUNT} 次以上，依次數排序）`, ...rules.map(r => `- ${r.name}（${r.count} 次）：${ruleText(r)}`)] : []),
   ].join('\n')
 }
@@ -633,7 +720,10 @@ async function distill($: EngineInterface, why: string, queue = true) {
   try {
     // 這次整理到使用者最後一則訊息為止；下次從它之後開始
     const anchor = (await $.store.get(`last:${sid}`)) as string | undefined
-    const transcript = transcriptOf((await $.session.messages()) as readonly Row[], prev?.anchor)
+    const rows = (await $.session.messages()) as readonly Row[]
+    const transcript = transcriptOf(rows, prev?.anchor)
+    // quote 的比對對象：使用者自己送出的訊息（本程式注入的經驗與 handoff 不算）
+    const userText = squash(rows.filter(r => r.role === 'user' && !r.text.startsWith(NOTE_TAG) && !r.text.startsWith(tag)).map(r => r.text).join('\n'))
     const file = await notesFile($)
     const original = await readText($, file)
     const notes = parseNotes(original)
@@ -654,7 +744,7 @@ async function distill($: EngineInterface, why: string, queue = true) {
     }
     const now = await $.clock.now()
     const stamp = localStamp(now)
-    const { actions, rejected } = parseActions(r.text, notes)
+    const { actions, rejected } = parseActions(r.text, notes, userText)
     // 整理期間經驗檔被改過：編號對不上，這次不寫也不推進進度，下次重新整理同一段
     if ((await readText($, file)) !== original) {
       const reason = `整理期間經驗檔被修改，這次略過：${file}`
@@ -663,7 +753,7 @@ async function distill($: EngineInterface, why: string, queue = true) {
       distillFailed = true
       return r
     }
-    const { notes: updated, changes } = applyActions(actions, notes, stamp.slice(0, 10))
+    const { notes: updated, changes } = applyActions(actions, notes, stamp.slice(0, 10), sid)
     if (changes.length > 0) await $.fs.write(file, renderNotes(updated, stamp))
     await $.store.set(key, { turn: turns, at: now, anchor })
     await touchSeen($, key)
@@ -1144,7 +1234,7 @@ async function panelView($: EngineInterface, columns: number): Promise<PanelView
     candidates: (await guardCandidates($)).length,
     suggesting,
     ...(d ? { lastDistill: { at: new Date(d.at).toLocaleString(), why: d.why, changes: d.changes } } : {}),
-    memory: notes.memory.slice(-PANEL_MEMORY),
+    memory: notes.memory.slice(-PANEL_MEMORY).map(m => ({ head: memHead(m), detail: memLines(m).slice(1).map(l => l.replace(/^\s+- /, '')) })),
     memoryTotal: notes.memory.length,
     rules: [...notes.rules].sort((a, b) => b.count - a.count).map(r => ({ name: r.name, count: r.count })),
     ...(confirming ? { confirming } : {}),
@@ -1160,7 +1250,7 @@ async function dropNote($: EngineInterface, key: string) {
   const notes = parseNotes(original)
   const target = key.slice(2)
   const updated = key.startsWith('m:')
-    ? { ...notes, memory: notes.memory.filter(m => m !== target) }
+    ? { ...notes, memory: notes.memory.filter(m => memHead(m) !== target) }
     : { ...notes, rules: notes.rules.filter(r => r.name !== target) }
   if (updated.memory.length + updated.rules.length === notes.memory.length + notes.rules.length) {
     return '找不到這一條，經驗檔可能剛被改過'
