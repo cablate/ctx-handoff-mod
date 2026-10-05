@@ -1,4 +1,6 @@
 import type { EngineInterface, Register, Timer } from 'claude-code'
+import { panelTree } from './panel'
+import type { PanelActions, PanelView } from './panel'
 
 const tag = '[ctx-handoff]'
 
@@ -889,6 +891,9 @@ function resetState() {
   deferToasted = false
   seenKnown.clear()
   guardsKeyCache = undefined
+  confirming = undefined
+  suggesting = false
+  panelNote = undefined
 }
 
 // 每個 session 一把的鍵（值不改寫）：第一次看到的時間記在 seen，超過 30 天的刪掉
@@ -1076,17 +1081,31 @@ async function guardCommand($: EngineInterface, args: string[]) {
   const [action = '', idText = '', modeText = ''] = args
   if (action === '') return { text: await guardList($) }
   if (action === 'suggest') return suggestGuards($)
-  const guards = await loadGuards($)
-  const g = guards.find(x => x.id === Number(idText))
   const usage = `${tag} 用法 /handoff guard [suggest | on N | off N | mode N deny|remind | drop N]`
-  if (!g) return { text: idText ? `${tag} 沒有守門 #${idText}\n${await guardList($)}` : usage }
-  let updated: Guard[]
-  if (action === 'on' || action === 'off') updated = guards.map(x => (x === g ? { ...x, state: action } : x))
-  else if (action === 'drop') updated = guards.filter(x => x !== g)
-  else if (action === 'mode' && GUARD_MODES.some(m => m === modeText)) updated = guards.map(x => (x === g ? { ...x, mode: modeText as GuardMode } : x))
-  else return { text: usage }
+  const change = action === 'on' || action === 'off' || action === 'drop' ? action
+    : action === 'mode' ? GUARD_MODES.find(m => m === modeText) : undefined
+  if (change === undefined || !idText) return { text: usage }
+  const g = await changeGuard($, Number(idText), change)
+  if (!g) return { text: `${tag} 沒有守門 #${idText}\n${await guardList($)}` }
+  return { text: `${tag} 守門 #${g.id} 已${change === 'drop' ? '刪除' : '更新'}\n${await guardList($)}` }
+}
+
+// 啟用／停用／刪除／換模式；回傳改到的那一條，找不到回 undefined
+async function changeGuard($: EngineInterface, id: number, change: 'on' | 'off' | 'drop' | GuardMode) {
+  const guards = await loadGuards($)
+  const g = guards.find(x => x.id === id)
+  if (!g) return undefined
+  const updated = change === 'drop' ? guards.filter(x => x !== g)
+    : guards.map(x => (x !== g ? x : change === 'on' || change === 'off' ? { ...x, state: change } : { ...x, mode: change }))
   await $.store.set(await guardsKey($), updated)
-  return { text: `${tag} 守門 #${g.id} 已${action === 'drop' ? '刪除' : '更新'}\n${await guardList($)}` }
+  return g
+}
+
+async function openPanel($: EngineInterface) {
+  confirming = undefined
+  panelNote = undefined
+  const r = await $.ui.open({ id: PANE, title: PANE_TITLE })
+  return { text: r.isPlaced ? `${tag} 面板已開啟` : `${tag} 面板沒有開成：${r.reason}` }
 }
 
 async function guardSummary($: EngineInterface) {
@@ -1100,6 +1119,81 @@ async function guardSummary($: EngineInterface) {
 async function recordHit($: EngineInterface, id: number) {
   const guards = await loadGuards($)
   await $.store.set(await guardsKey($), guards.map(g => (g.id === id ? { ...g, hits: g.hits + 1 } : g)))
+}
+
+// ---------- 面板：/handoff panel，看最近整理的變動、刪掉記錯的筆記、核准守門 ----------
+const PANE = 'ctx-handoff'
+const PANE_TITLE = 'ctx-handoff：專案筆記與守門'
+const PANEL_MEMORY = 8
+// 等待確認刪除的項目、正在提守門草稿、上一個動作的結果（熱重載會清掉，無妨）
+let confirming: string | undefined
+let suggesting = false
+let panelNote: string | undefined
+
+async function panelView($: EngineInterface): Promise<PanelView> {
+  const file = await notesFile($)
+  const notes = parseNotes(await readText($, file))
+  const d = (await $.store.get(`distill:last:${await projectKey($)}`)) as DistillLast | undefined
+  return {
+    file,
+    guards: await loadGuards($),
+    candidates: (await guardCandidates($)).length,
+    suggesting,
+    ...(d ? { lastDistill: { at: new Date(d.at).toLocaleString(), why: d.why, changes: d.changes } } : {}),
+    memory: notes.memory.slice(-PANEL_MEMORY),
+    memoryTotal: notes.memory.length,
+    rules: [...notes.rules].sort((a, b) => b.count - a.count).map(r => ({ name: r.name, count: r.count })),
+    ...(confirming ? { confirming } : {}),
+    ...(panelNote ? { note: panelNote } : {}),
+  }
+}
+
+// 刪一條記憶（m:<原文>）或規則（r:<名稱>）：重讀經驗檔、比對原文，寫檔前把原檔備份到旁邊的 .ctx-handoff-backup/
+async function dropNote($: EngineInterface, key: string) {
+  if (distilling) return '背景整理進行中，稍後再刪'
+  const file = await notesFile($)
+  const original = await readText($, file)
+  const notes = parseNotes(original)
+  const target = key.slice(2)
+  const updated = key.startsWith('m:')
+    ? { ...notes, memory: notes.memory.filter(m => m !== target) }
+    : { ...notes, rules: notes.rules.filter(r => r.name !== target) }
+  if (updated.memory.length + updated.rules.length === notes.memory.length + notes.rules.length) {
+    return '找不到這一條，經驗檔可能剛被改過'
+  }
+  const now = await $.clock.now()
+  const dir = file.slice(0, file.lastIndexOf('/'))
+  await $.fs.write(`${dir}/.ctx-handoff-backup/${new Date(now).toISOString().slice(0, 19).replace(/:/g, '-')}-ctx-handoff.md`, original)
+  await $.fs.write(file, renderNotes(updated, localStamp(now)))
+  return `已刪除${key.startsWith('m:') ? '記憶' : `規則「${target}」`}（原檔已備份到 ${dir}/.ctx-handoff-backup/）`
+}
+
+function panelActions($: EngineInterface): PanelActions {
+  // 按鈕的 handler 是同步的：動作在背景跑完再重畫；失敗也寫進提示列
+  const run = (work: () => Promise<string | undefined>) => {
+    void work()
+      .then(note => { panelNote = note })
+      .catch(err => { panelNote = `失敗：${String(err)}` })
+      .finally(() => $.ui.invalidate('ui.render'))
+  }
+  return {
+    guard: (id, action) => run(async () => {
+      const g = await changeGuard($, id, action)
+      return g ? `守門 #${id} 已${action === 'on' ? '核准' : action === 'off' ? '停用' : '刪除'}` : `沒有守門 #${id}`
+    }),
+    suggest: () => {
+      if (suggesting) return
+      suggesting = true
+      $.ui.invalidate('ui.render')
+      run(async () => {
+        try { return (await suggestGuards($)).text.split('\n')[0]?.replace(`${tag} `, '') }
+        finally { suggesting = false }
+      })
+    },
+    ask: key => { confirming = key; panelNote = undefined; $.ui.invalidate('ui.render') },
+    drop: key => { confirming = undefined; run(() => dropNote($, key)) },
+    close: () => { void $.ui.close({ id: PANE }) },
+  }
 }
 
 export const register: Register = on => {
@@ -1157,6 +1251,9 @@ export const register: Register = on => {
     const r = await next(e)
     return r.deny === undefined ? { ...r, context: [...(r.context ?? []), head] } : r
   })
+
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) =>
+    panelTree($.ui.resolve(e), await panelView($), panelActions($)))
 
   on('turn.complete', async ($, e, next) => {
     const out = await next(e)
@@ -1273,6 +1370,7 @@ export const register: Register = on => {
       case 'resend': return resend($)
       case 'refresh': return refreshCommand($, arg)
       case 'guard': return guardCommand($, [arg, ...rest])
+      case 'panel': return openPanel($)
       default: return { text: `${tag} 不認得「${sub}」\n${USAGE}` }
     }
   })
@@ -1289,7 +1387,8 @@ const USAGE = [
   '　/handoff resend           重新送出沒送達的 handoff（不 /clear）',
   '　/handoff refresh on|off   開關閒置時的快取刷新',
   '　/handoff distill on|off   開關背景整理',
-  '　/handoff guard            守門清單；suggest 從常犯規則提草稿；on|off|drop N；mode N deny|remind',
+  '　/handoff panel            面板：最近整理的變動、刪掉記錯的筆記、核准守門',
+  '　/handoff guard           守門清單；suggest 從常犯規則提草稿；on|off|drop N；mode N deny|remind',
 ].join('\n')
 
 async function status($: EngineInterface) {

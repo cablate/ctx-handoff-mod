@@ -1287,3 +1287,52 @@ test('守門：/handoff guard on|mode|drop 改狀態', async ($, on) => {
   await cmd($, 'guard drop 1')
   expect(w.get('guards:C--proj')).toEqual([])
 })
+
+// ---------- 面板 ----------
+const PANE_MOUNT = { plugin: 'ctx-handoff', surface: 'terminal' as const, component: 'Pane' as const, requestId: 'ctx-handoff',
+  props: { title: 'ctx-handoff', isFocused: true, bodyColumns: 120, placement: 'dock' as const, scroll: { offset: 0, bodyRows: 40 }, view: {} } }
+const PANEL_NOTES = ['# ctx-handoff 專案經驗', '', '## 記憶', '- [project] 舊的記憶', '- [feedback] 使用者要求每次都先跑測試', '', '## 規則', '', '### 推送前先跑 preflight（3 次）', '- 規則：先跑 preflight'].join('\n')
+
+test('面板：/handoff panel 開啟面板', async ($, on) => {
+  world(on, 1000)
+  const opened: string[] = []
+  on('ui.open', (_$, e: { id: string }) => { opened.push(e.id); return { value: { isPlaced: true as const } } })
+  const r = await cmd($, 'panel')
+  expect(opened).toEqual(['ctx-handoff'])
+  expect(r.text).toContain('面板已開啟')
+})
+
+test('面板：列出守門與記憶，按核准後守門生效', async ($, on) => {
+  const w = world(on, 1000, 1_000_000, { 'guards:C--proj': [{ ...pushGuard('proposed'), replay: { hits: 1, calls: 4 } }] })
+  w.files.set(NOTES_PATH, PANEL_NOTES)
+  const ui = await $.ui.mount(PANE_MOUNT)
+  expect(await ui.find({ type: 'Text', text: /草稿・擋下\] 推送前先跑 preflight/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /4 次工具呼叫中命中 1 次/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /使用者要求每次都先跑測試/ })).toBeDefined()
+  await ui.press({ key: 'on1' })
+  await w.clock.advance(0)
+  expect((w.get('guards:C--proj') as { state: string }[])[0]?.state).toBe('on')
+  expect(await ui.find({ type: 'Text', text: /守門 #1 已核准/ })).toBeDefined()
+  const blocked = await $.tool.call({ tool: 'Bash', command: 'git push' })
+  expect(blocked.deny).toContain('守門 #1')
+})
+
+test('面板：刪除記憶要按兩次，寫檔前備份原檔', async ($, on) => {
+  const w = world(on, 1000)
+  w.files.set(NOTES_PATH, PANEL_NOTES)
+  const ui = await $.ui.mount(PANE_MOUNT)
+  const key = 'm:- [feedback] 使用者要求每次都先跑測試'
+  await ui.press({ key: `del:${key}` })
+  await w.clock.advance(0)
+  // 第一次只標記，不寫檔
+  expect(w.files.get(NOTES_PATH)).toBe(PANEL_NOTES)
+  await ui.press({ key: `yes:${key}` })
+  await w.clock.advance(0)
+  const after = w.files.get(NOTES_PATH) ?? ''
+  expect(after).not.toContain('使用者要求每次都先跑測試')
+  expect(after).toContain('舊的記憶')
+  expect(after).toContain('### 推送前先跑 preflight（3 次）')
+  const backup = [...w.files.keys()].find(p => p.includes('/memory/.ctx-handoff-backup/'))
+  expect(backup && w.files.get(backup)).toBe(PANEL_NOTES)
+  expect(await ui.find({ type: 'Text', text: /已刪除記憶/ })).toBeDefined()
+})
