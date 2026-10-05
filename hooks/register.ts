@@ -376,8 +376,11 @@ function applyActions(actions: Action[], n: Notes, day: string, sid = ''): { not
   const memory = n.memory.map(m => ({ ...m, evidence: [...m.evidence] })) as (Memory | undefined)[]
   const addedMem: Memory[] = []
   const stamp = `${day}${sid ? ` ${sid.slice(0, 8)}` : ''}`
-  const evidenceOf = (a: MemoryFields) =>
-    a.evidence || a.quote ? `${stamp}｜${[a.evidence, a.quote && `使用者原話：「${a.quote}」`].filter(Boolean).join('｜')}` : undefined
+  // 日期由程式補：模型自己在開頭寫的日期去掉，避免重複
+  const evidenceOf = (a: MemoryFields) => {
+    const evidence = a.evidence?.replace(/^\d{4}-\d{2}-\d{2}\s*[｜|：:]?\s*/, '')
+    return evidence || a.quote ? `${stamp}｜${[evidence, a.quote && `使用者原話：「${a.quote}」`].filter(Boolean).join('｜')}` : undefined
+  }
   const sameTitle = (a: Memory) => (b: Memory | undefined) => b?.title === a.title
   const rules = n.rules.map(r => ({ ...r, body: [...r.body] })) as (Rule | undefined)[]
   const added: Rule[] = []
@@ -1060,6 +1063,8 @@ type GuardState = 'proposed' | 'on' | 'off'
 type Guard = {
   id: number; rule: string; tool: string; match: string; unless?: string; message: string
   mode: GuardMode; state: GuardState; hits: number; at: number
+  // 提案時驗證過的範例：bad 會被擋、good 會放行
+  bad?: string; good?: string
   // 提案時試比對這段對話已跑過的工具呼叫：命中幾次、總共幾次
   replay?: { hits: number; calls: number }
 }
@@ -1105,21 +1110,24 @@ function guardPrompt(rules: Rule[], tools: string[]) {
     '比對方式：',
     '- tool：工具名稱原樣，例如 Bash、Edit、mcp__supabase__execute_sql；結尾 * 表示前綴',
     '- 比對文字：工具參數的字串值以換行串起來（Bash 就是 command 本身）；不分大小寫的 JavaScript 正規表達式',
-    `- match／unless 各不超過 ${GUARD_PATTERN_MAX} 字；寧可窄、不要寬`,
+    `- match／unless 各不超過 ${GUARD_PATTERN_MAX} 字；寧可窄、不要寬，不要寫成什麼都命中的樣式`,
+    '- 特殊字元要跳脫：比對字面的 $$ 要寫 \\$\\$，. 寫 \\.；寫進 JSON 時每個反斜線再寫成 \\\\',
+    '- MCP 的 SQL 工具參數含 project_id：規則只管正式站時，用它分辨正式站和測試環境',
+    '- bad：一段違規的比對文字範例（要被 match 命中、不被 unless 排除）；good：一段照規則做、也用同一個工具的正確範例（不能被擋）。程式會實際比對，不符就丟掉',
     '- mode：deny（執行前擋下）只用在不可逆、正式環境或代價高的錯誤；其他用 remind（照常執行，之後提醒）',
     '- message：給 AI 看的一句話，說該改成怎麼做（引用規則裡的工具或指令）',
     '',
     `這個對話用過的工具：${tools.length ? tools.join(', ') : '（無紀錄）'}`,
     '',
     `輸出：在 ${ACTIONS_START} 與 ${ACTIONS_END} 之間，每行一個 JSON，每條規則最多一個；沒有適合的就兩行標記之間留空。`,
-    '{"rule":"<規則名稱，原樣>","tool":"Bash","match":"<regex>","unless":"<regex，可省略>","mode":"remind","message":"<一句話>"}',
+    '{"rule":"<規則名稱，原樣>","tool":"Bash","match":"<regex>","unless":"<regex，可省略>","mode":"remind","message":"<一句話>","bad":"<違規範例>","good":"<正確範例>"}',
     '',
     '=== 規則 ===',
     ...rules.flatMap(r => [`### ${r.name}`, ...r.body]),
   ].join('\n')
 }
 
-type ProposedGuard = Pick<Guard, 'rule' | 'tool' | 'match' | 'unless' | 'mode' | 'message'>
+type ProposedGuard = Pick<Guard, 'rule' | 'tool' | 'match' | 'unless' | 'mode' | 'message' | 'bad' | 'good'>
 
 function parseGuards(text: string, names: Set<string>) {
   const out: ProposedGuard[] = []
@@ -1143,8 +1151,15 @@ function parseGuards(text: string, names: Set<string>) {
         if (p.length > GUARD_PATTERN_MAX) throw new Error('regex 太長')
         new RegExp(p, 'i')
       }
+      // 範例驗證：違規的要擋、正確的要放行；擋不到或什麼都擋的樣式在這裡被丟掉
+      const bad = str('bad'), good = str('good')
+      if (!bad || !good) throw new Error('缺 bad／good 範例')
+      const probe = { tool, match, ...(unless ? { unless } : {}) }
+      const self = tool.replace(/\*$/, '')
+      if (!guardHits(probe, self, bad)) throw new Error('違規範例沒有被擋')
+      if (guardHits(probe, self, good)) throw new Error('正確範例也會被擋')
       if (out.some(o => o.rule === rule)) throw new Error('同一條規則重複')
-      out.push({ rule, tool, match, ...(unless ? { unless } : {}), mode, message })
+      out.push({ ...probe, rule, mode, message, bad, good })
     } catch (err) {
       rejected.push(`${clip(line.trim(), 80)}（${err instanceof Error ? err.message : String(err)}）`)
     }
@@ -1203,6 +1218,7 @@ async function guardList($: EngineInterface) {
       `#${g.id} [${STATE_LABEL[g.state]}・${g.mode === 'deny' ? '擋下' : '提醒'}] ${g.rule}（已觸發 ${g.hits} 次）`,
       `　${g.tool} 符合 /${g.match}/${g.unless ? ` 且不符合 /${g.unless}/` : ''}`,
       `　→ ${g.message}`,
+      ...(g.bad && g.good ? [`　範例：擋「${clip(g.bad, 80)}」，放行「${clip(g.good, 80)}」`] : []),
       ...(g.replay ? [`　提案時試比對這段對話：${g.replay.calls} 次工具呼叫中會命中 ${g.replay.hits} 次`] : []),
     ]),
   ].join('\n')

@@ -1287,10 +1287,14 @@ test('守門：suggest 只送 3 次以上的規則，驗證草稿並試比對這
   ].join('\n'))
   w.rows.push({ role: 'assistant', text: '', toolUses: [{ tool: 'Bash', input: { command: 'git push' } }, { tool: 'Bash', input: { command: 'ls' } }] })
   distillReply = actionsReply(
-    { rule: '推送前先跑 preflight', tool: 'Bash', match: 'git\\s+push', unless: 'preflight', mode: 'deny', message: '先跑 preflight' },
-    { rule: '推送前先跑 preflight', tool: 'Bash', match: 'push', mode: 'remind', message: '重複' },
-    { rule: '不存在的規則', tool: 'Bash', match: 'x', mode: 'deny', message: 'x' },
-    { rule: '推送前先跑 preflight', tool: 'Bash', match: '(', mode: 'deny', message: '壞 regex' },
+    { rule: '推送前先跑 preflight', tool: 'Bash', match: 'git\\s+push', unless: 'preflight', mode: 'deny', message: '先跑 preflight', bad: 'git push origin main', good: 'node cli.mjs preflight && git push' },
+    { rule: '推送前先跑 preflight', tool: 'Bash', match: 'push', mode: 'remind', message: '沒有範例' },
+    { rule: '不存在的規則', tool: 'Bash', match: 'x', mode: 'deny', message: 'x', bad: 'x', good: 'y' },
+    { rule: '推送前先跑 preflight', tool: 'Bash', match: '(', mode: 'deny', message: '壞 regex', bad: '(', good: 'y' },
+    // 什麼都擋的樣式：正確範例也被擋
+    { rule: '推送前先跑 preflight', tool: 'Bash', match: '[\\s\\S]', mode: 'remind', message: '太寬', bad: 'git push', good: 'node cli.mjs preflight && git push' },
+    // $ 沒跳脫：$$ 變成字串結尾，擋不到違規範例
+    { rule: '推送前先跑 preflight', tool: 'Bash', match: 'do\\s+$$', mode: 'remind', message: '沒跳脫', bad: 'do $$ delete from x $$', good: 'ls' },
   )
   const r = await cmd($, 'guard suggest')
   expect(w.completes[0]?.system).toContain('### 推送前先跑 preflight')
@@ -1298,8 +1302,12 @@ test('守門：suggest 只送 3 次以上的規則，驗證草稿並試比對這
   const guards = w.get('guards:C--proj') as { id: number; state: string; replay: { hits: number; calls: number } }[]
   expect(guards.length).toBe(1)
   expect(guards[0]).toMatchObject({ id: 1, state: 'proposed', replay: { hits: 1, calls: 2 } })
-  expect(r.text).toContain('丟棄 3 行')
+  expect(r.text).toContain('丟棄 5 行')
+  expect(r.text).toContain('缺 bad／good 範例')
+  expect(r.text).toContain('正確範例也會被擋')
+  expect(r.text).toContain('違規範例沒有被擋')
   expect(r.text).toContain('2 次工具呼叫中會命中 1 次')
+  expect(r.text).toContain('範例：擋「git push origin main」，放行「node cli.mjs preflight && git push」')
   // 已有守門（任何狀態）的規則不再提
   const again = await cmd($, 'guard suggest')
   expect(again.text).toContain('沒有出現 3 次以上、還沒有守門的規則')
@@ -1463,4 +1471,11 @@ test('面板：封存的記憶另列一區，按留下就加一筆今天的根�
   expect(w.files.get(NOTES) ?? '').toContain('  - 根據：1970-01-01｜在面板確認留下')
   expect(await ui.find({ type: 'Text', text: /封存（/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /已留下：很久沒證實的位置/ })).toBeDefined()
+})
+
+test('記憶的根據：模型自己在開頭寫的日期去掉，只留程式補的那一個', async ($, on) => {
+  const w = world(on, 100_000, 1_000_000, {}, [], 5)
+  distillReply = actionsReply({ op: 'add_memory', type: 'project', title: '有日期的根據', evidence: '1970-01-01｜PR #1 實測' })
+  await distillNow($)
+  expect(w.files.get(NOTES) ?? '').toContain('  - 根據：1970-01-01 S1｜PR #1 實測')
 })

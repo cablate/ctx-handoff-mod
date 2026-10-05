@@ -7,6 +7,7 @@ export type PanelGuard = {
   id: number; rule: string; tool: string; match: string; unless?: string; message: string
   mode: 'deny' | 'remind'; state: 'proposed' | 'on' | 'off'; hits: number
   replay?: { hits: number; calls: number }
+  bad?: string; good?: string
 }
 
 export type PanelView = {
@@ -90,7 +91,8 @@ export function panelTree(ui: Elements, v: PanelView, act: PanelActions) {
       <Text bold>守門</Text>
       {v.guards.length === 0 ? <Text dimColor>　還沒有守門</Text> : null}
       {v.guards.map(g => {
-        const detail = `${g.tool} 符合 /${g.match}/${g.unless ? ` 且不符合 /${g.unless}/` : ''} → ${g.message}`
+        const detail = `${g.tool} 符合 /${g.match}/${g.unless ? ` 且不符合 /${g.unless}/` : ''} → ${g.message}` +
+          (g.bad && g.good ? `｜範例：擋「${g.bad}」，放行「${g.good}」` : '')
         return (
           <Box key={`g${g.id}`} flexDirection="column">
             <Box>
