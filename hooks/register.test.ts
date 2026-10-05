@@ -1336,3 +1336,19 @@ test('面板：刪除記憶要按兩次，寫檔前備份原檔', async ($, on) 
   expect(backup && w.files.get(backup)).toBe(PANEL_NOTES)
   expect(await ui.find({ type: 'Text', text: /已刪除記憶/ })).toBeDefined()
 })
+
+test('面板：長記憶依寬度截成一行，按展開才顯示全文', async ($, on) => {
+  const w = world(on, 1000)
+  const long = `- [reference] ${'很長的記憶內容'.repeat(40)}結尾`
+  w.files.set(NOTES_PATH, ['# ctx-handoff 專案經驗', '', '## 記憶', long, '', '## 規則'].join('\n'))
+  const ui = await $.ui.mount(PANE_MOUNT)
+  const row = await ui.find({ type: 'Text', text: /很長的記憶內容/ })
+  expect(row?.text).toContain('…')
+  expect(row?.text).not.toContain('結尾')
+  // 中文一字兩格：截短後不超過面板寬度
+  expect([...(row?.text ?? '')].reduce((n, ch) => n + ((ch.codePointAt(0) ?? 0) >= 0x1100 ? 2 : 1), 0)).toBeLessThanOrEqual(120)
+  await ui.press({ key: `t:m:${long}` })
+  expect(await ui.find({ type: 'Text', text: /結尾$/ })).toBeDefined()
+  await ui.press({ key: `t:m:${long}` })
+  expect(await ui.find({ type: 'Text', text: /結尾$/ })).toBeUndefined()
+})

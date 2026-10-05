@@ -894,6 +894,7 @@ function resetState() {
   confirming = undefined
   suggesting = false
   panelNote = undefined
+  expanded.clear()
 }
 
 // 每個 session 一把的鍵（值不改寫）：第一次看到的時間記在 seen，超過 30 天的刪掉
@@ -1129,13 +1130,16 @@ const PANEL_MEMORY = 8
 let confirming: string | undefined
 let suggesting = false
 let panelNote: string | undefined
+const expanded = new Set<string>()
 
-async function panelView($: EngineInterface): Promise<PanelView> {
+async function panelView($: EngineInterface, columns: number): Promise<PanelView> {
   const file = await notesFile($)
   const notes = parseNotes(await readText($, file))
   const d = (await $.store.get(`distill:last:${await projectKey($)}`)) as DistillLast | undefined
   return {
     file,
+    columns,
+    expanded: [...expanded],
     guards: await loadGuards($),
     candidates: (await guardCandidates($)).length,
     suggesting,
@@ -1189,6 +1193,10 @@ function panelActions($: EngineInterface): PanelActions {
         try { return (await suggestGuards($)).text.split('\n')[0]?.replace(`${tag} `, '') }
         finally { suggesting = false }
       })
+    },
+    toggle: key => {
+      if (!expanded.delete(key)) expanded.add(key)
+      $.ui.invalidate('ui.render')
     },
     ask: key => { confirming = key; panelNote = undefined; $.ui.invalidate('ui.render') },
     drop: key => { confirming = undefined; run(() => dropNote($, key)) },
@@ -1253,7 +1261,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) =>
-    panelTree($.ui.resolve(e), await panelView($), panelActions($)))
+    panelTree($.ui.resolve(e), await panelView($, e.props.bodyColumns), panelActions($)))
 
   on('turn.complete', async ($, e, next) => {
     const out = await next(e)
