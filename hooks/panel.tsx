@@ -1,40 +1,13 @@
 // /handoff panel：專案筆記與守門的面板（輸入框上方）。只負責畫面，資料與動作由 register.ts 傳入
 import type { EngineInterface } from 'claude-code'
+import type { PanelData, PanelTab, PanelUi } from '../types'
 
 type Elements = ReturnType<EngineInterface['ui']['resolve']>
 
-export type PanelGuard = {
-  id: number; rule: string; tool: string; match: string; unless?: string; message: string
-  mode: 'deny' | 'remind'; state: 'proposed' | 'on' | 'off'; hits: number
-  replay?: { hits: number; calls: number }
-  bad?: string; good?: string
-}
+export type { PanelTab } from '../types'
 
-export type PanelTab = 'guard' | 'memory' | 'rules' | 'distill'
-
-export type PanelView = {
-  file: string
-  // 面板內文寬度（格數）：長文字依它截成一行
-  columns: number
-  tab: PanelTab
-  guards: PanelGuard[]
-  candidates: number
-  suggesting: boolean
-  lastDistill?: { at: string; why: string; changes: string[] }
-  // head：[類型] 標題；detail：做法、理由、根據各一行（展開才顯示）
-  memory: { head: string; detail: string[] }[]
-  memoryTotal: number
-  // 超過 staleDays 天沒被證實、不帶入新對話的事實類記憶（[類型] 標題）
-  archived: string[]
-  staleDays: number
-  rules: { name: string; count: number }[]
-  // 展開全文的項目（m:<記憶原文>／g<守門編號>／changes）
-  expanded: string[]
-  // 等待確認刪除的項目（m:<記憶原文>／r:<規則名稱>）
-  confirming?: string
-  // 上一個動作的結果
-  note?: string
-}
+// 畫面要的全部：資料快照、操作狀態、面板內文寬度（格數，長文字依它截成一行）
+export type PanelView = PanelData & PanelUi & { columns: number }
 
 export type PanelActions = {
   tab: (tab: PanelTab) => void
@@ -101,6 +74,7 @@ export function panelTree(ui: Elements, v: PanelView, act: PanelActions) {
   const badge = (label: string, color: string) => <Text color={color} bold>{label}</Text>
   const empty = (text: string) => <Text dimColor>{text}</Text>
 
+  // 熱鍵 1–4：面板拿到鍵盤（ctrl+x tab 或點一下）時按數字切分頁
   const tabs: { id: PanelTab; label: string }[] = [
     { id: 'guard', label: `守門 ${v.guards.length}` },
     { id: 'memory', label: `記憶 ${v.memoryTotal}` },
@@ -244,10 +218,11 @@ export function panelTree(ui: Elements, v: PanelView, act: PanelActions) {
         <Button key="close" label="關閉" role="dismiss" dimColor onPress={act.close} />
       </Box>
       <Box marginBottom={1}>
-        {tabs.map(t => (
+        {tabs.map((t, i) => (
           <Button
             key={`tab:${t.id}`}
             label={t.label}
+            hotkey={String(i + 1)}
             {...(t.id === v.tab ? { variant: 'primary' as const } : { dimColor: true })}
             onPress={() => act.tab(t.id)}
           />
@@ -256,7 +231,7 @@ export function panelTree(ui: Elements, v: PanelView, act: PanelActions) {
       {v.note ? <Box marginBottom={1}><Text color="yellow">{fit(v.note, inner)}</Text></Box> : null}
       {body}
       <Box marginTop={1}>
-        <Text dimColor>{fit(v.file, inner)}</Text>
+        <Text dimColor>{fit(`ctrl+x tab 後按 1–4 切分頁・${v.file}`, inner)}</Text>
       </Box>
     </Box>
   )

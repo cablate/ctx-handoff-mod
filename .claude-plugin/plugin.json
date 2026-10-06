@@ -1,1 +1,1 @@
-{ "name": "ctx-handoff", "version": "0.2.0", "description": "Auto handoff + /clear at a context threshold, idle cache refresh with an away handoff, and background notes per workspace" }
+{"name":"ctx-handoff","version":"0.2.0","description":"Auto handoff + /clear at a context threshold, idle cache refresh with an away handoff, and background notes per workspace","types":"./types/index.d.ts"}

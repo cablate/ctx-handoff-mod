@@ -1,6 +1,8 @@
+import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
+import type { PanelData, PanelUi } from '../types'
 import { panelTree } from './panel'
-import type { PanelActions, PanelTab, PanelView } from './panel'
+import type { PanelActions } from './panel'
 
 const tag = '[ctx-handoff]'
 
@@ -801,6 +803,7 @@ async function distill($: EngineInterface, why: string, queue = true) {
     await touchSeen($, key)
     const usage = describeUsage({ input: r.usage.input_tokens, cacheRead: r.usage.cache_read_input_tokens, cacheCreation: r.usage.cache_creation_input_tokens, output: r.usage.output_tokens, ms: now - started })
     await $.store.set(`distill:last:${await projectKey($)}`, { at: now, why, changes, file, usage, rejected } satisfies DistillLast)
+    await refreshPanel($)
     $.ui.log(`${tag} 背景整理（${why}）：${changes.length} 項變動${rejected.count ? `，丟棄 ${rejected.count} 行無效輸出` : ''}${changes.length ? `；寫入 ${file}` : ''}`)
     // 先寫檔再排入；差異跟著下一則真正送進對話的訊息帶入（見 prompt.submit）
     if (changes.length > 0 && queue) {
@@ -1024,12 +1027,6 @@ function resetState() {
   deferToasted = false
   seenKnown.clear()
   guardsKeyCache = undefined
-  confirming = undefined
-  suggesting = false
-  panelNote = undefined
-  panelOpen = false
-  panelTab = 'guard'
-  expanded.clear()
 }
 
 // 每個 session 一把的鍵（值不改寫）：第一次看到的時間記在 seen，超過 30 天的刪掉
@@ -1252,12 +1249,15 @@ async function changeGuard($: EngineInterface, id: number, change: 'on' | 'off' 
 
 // /handoff panel：開或關輸入框上方的面板（再打一次就關）
 async function togglePanel($: EngineInterface) {
-  panelOpen = !panelOpen
-  confirming = undefined
-  panelNote = undefined
-  $.ui.invalidate('ui.render')
+  const open = !(await read($, panelUi)).open
+  // 先備好資料再打開，畫面一出來就有內容
+  if (open) {
+    const data = await loadPanelData($)
+    await update($, panelData, () => data)
+  }
+  await update($, panelUi, u => ({ open, tab: u.tab, expanded: u.expanded, suggesting: u.suggesting }))
   return {
-    text: panelOpen
+    text: open
       ? `${tag} 面板已開在輸入框上方：直接點按鈕，或按 ctrl+x tab 用鍵盤操作；再打一次 /handoff panel 關閉`
       : `${tag} 面板已關閉`,
   }
@@ -1274,43 +1274,50 @@ async function guardSummary($: EngineInterface) {
 async function recordHit($: EngineInterface, id: number) {
   const guards = await loadGuards($)
   await $.store.set(await guardsKey($), guards.map(g => (g.id === id ? { ...g, hits: g.hits + 1 } : g)))
+  await refreshPanel($)
 }
 
 // ---------- 面板：/handoff panel，看最近整理的變動、刪掉記錯的筆記、核准守門 ----------
 // 畫在輸入框上方（AbovePrompt），不用 Pane：終端機全螢幕版面的 Pane 一定停靠在側邊
 const PANEL_MEMORY = 8
-let panelOpen = false
-let panelTab: PanelTab = 'guard'
-// 等待確認刪除的項目、正在提守門草稿、上一個動作的結果（熱重載會清掉，無妨）
-let confirming: string | undefined
-let suggesting = false
-let panelNote: string | undefined
-const expanded = new Set<string>()
+// 畫面只讀 $.state 裡的快照：重畫不碰檔案與 store，按鈕不會等 I/O 才有反應
+const panelUi = atom({ plugin: 'ctx-handoff', key: 'panelUi' } as const, { open: false, tab: 'guard', expanded: [], suggesting: false })
+const panelData = atom({ plugin: 'ctx-handoff', key: 'panelData' } as const, null)
 
-async function panelView($: EngineInterface, columns: number): Promise<PanelView> {
+async function loadPanelData($: EngineInterface): Promise<PanelData> {
   const file = await notesFile($)
   const notes = parseNotes(await readText($, file))
+  const guards = await loadGuards($)
   const d = (await $.store.get(`distill:last:${await projectKey($)}`)) as DistillLast | undefined
-  const now = await $.clock.now()
+  const today = localStamp(await $.clock.now()).slice(0, 10)
   return {
     file,
-    columns,
-    tab: panelTab,
-    expanded: [...expanded],
-    guards: await loadGuards($),
-    candidates: (await guardCandidates($)).length,
-    suggesting,
+    guards,
+    candidates: notes.rules.filter(r => r.count >= GUARD_MIN_COUNT && !guards.some(g => g.rule === r.name)).length,
     ...(d ? { lastDistill: { at: new Date(d.at).toLocaleString(), why: d.why, changes: d.changes } } : {}),
     // 封存的另外列在封存區，這裡不重複
-    memory: notes.memory.filter(m => !isArchived(m, localStamp(now).slice(0, 10))).slice(-PANEL_MEMORY).map(m => ({ head: memHead(m), detail: memLines(m).slice(1).map(l => l.replace(/^\s+- /, '')) })),
+    memory: notes.memory.filter(m => !isArchived(m, today)).slice(-PANEL_MEMORY).map(m => ({ head: memHead(m), detail: memLines(m).slice(1).map(l => l.replace(/^\s+- /, '')) })),
     memoryTotal: notes.memory.length,
-    archived: notes.memory.filter(m => isArchived(m, localStamp(now).slice(0, 10))).map(memHead),
+    archived: notes.memory.filter(m => isArchived(m, today)).map(memHead),
     staleDays: STALE_DAYS,
     rules: [...notes.rules].sort((a, b) => b.count - a.count).map(r => ({ name: r.name, count: r.count })),
-    ...(confirming ? { confirming } : {}),
-    ...(panelNote ? { note: panelNote } : {}),
   }
 }
+
+// 面板開著才重算快照；失敗寫進提示列，不影響呼叫的地方
+async function refreshPanel($: EngineInterface) {
+  if (!(await read($, panelUi)).open) return
+  try {
+    const data = await loadPanelData($)
+    await update($, panelData, () => data)
+  } catch (err) {
+    await setNote($, `面板資料讀取失敗：${String(err)}`)
+  }
+}
+
+// 換掉提示列（undefined 清掉），順便清掉等待確認的刪除
+const setNote = ($: EngineInterface, note: string | undefined) =>
+  update($, panelUi, ({ confirming: _c, note: _n, ...u }) => (note ? { ...u, note } : u))
 
 // 刪一條記憶（m:<原文>）或規則（r:<名稱>）：重讀經驗檔、比對原文，寫檔前把原檔備份到旁邊的 .ctx-handoff-backup/
 // 封存的記憶按「留下」：加一筆今天的根據，等於人工證實一次（不刪內容，不用備份）
@@ -1346,36 +1353,30 @@ async function dropNote($: EngineInterface, key: string) {
 }
 
 function panelActions($: EngineInterface): PanelActions {
-  // 按鈕的 handler 是同步的：動作在背景跑完再重畫；失敗也寫進提示列
+  // 讀寫檔的動作在背景跑（不讓按鍵等它），跑完重算快照、結果寫進提示列；只改畫面狀態的直接寫 $.state
   const run = (work: () => Promise<string | undefined>) => {
     void work()
-      .then(note => { panelNote = note })
-      .catch(err => { panelNote = `失敗：${String(err)}` })
-      .finally(() => $.ui.invalidate('ui.render'))
+      .catch(err => `失敗：${String(err)}`)
+      .then(async note => { await refreshPanel($); await setNote($, note) })
   }
+  const setUi = (fn: (u: PanelUi) => PanelUi) => update($, panelUi, fn)
   return {
     guard: (id, action) => run(async () => {
       const g = await changeGuard($, id, action)
       return g ? `守門 #${id} 已${action === 'on' ? '核准' : action === 'off' ? '停用' : '刪除'}` : `沒有守門 #${id}`
     }),
-    suggest: () => {
-      if (suggesting) return
-      suggesting = true
-      $.ui.invalidate('ui.render')
-      run(async () => {
-        try { return (await suggestGuards($)).text.split('\n')[0]?.replace(`${tag} `, '') }
-        finally { suggesting = false }
-      })
-    },
-    tab: t => { panelTab = t; confirming = undefined; panelNote = undefined; $.ui.invalidate('ui.render') },
-    toggle: key => {
-      if (!expanded.delete(key)) expanded.add(key)
-      $.ui.invalidate('ui.render')
-    },
-    ask: key => { confirming = key; panelNote = undefined; $.ui.invalidate('ui.render') },
-    drop: key => { confirming = undefined; run(() => dropNote($, key)) },
+    suggest: () => run(async () => {
+      if ((await read($, panelUi)).suggesting) return undefined
+      await setUi(u => ({ ...u, suggesting: true }))
+      try { return (await suggestGuards($)).text.split('\n')[0]?.replace(`${tag} `, '') }
+      finally { await setUi(u => ({ ...u, suggesting: false })) }
+    }),
+    tab: tab => setUi(({ confirming: _c, note: _n, ...u }) => ({ ...u, tab })),
+    toggle: key => setUi(u => ({ ...u, expanded: u.expanded.includes(key) ? u.expanded.filter(k => k !== key) : [...u.expanded, key] })),
+    ask: key => setUi(({ confirming: _c, note: _n, ...u }) => (key ? { ...u, confirming: key } : u)),
+    drop: key => run(() => dropNote($, key)),
     keep: head => run(() => keepNote($, head)),
-    close: () => { panelOpen = false; $.ui.invalidate('ui.render') },
+    close: () => setUi(u => ({ ...u, open: false })),
   }
 }
 
@@ -1436,14 +1437,20 @@ export const register: Register = on => {
   })
 
   // 面板沒開、或問卷佔著輸入框上方時，交給下層（其他 plugin 或引擎自己的）
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) =>
-    !panelOpen || e.props.hasSurvey
-      ? next(e)
-      : panelTree($.ui.resolve(e), await panelView($, e.props.bodyColumns), panelActions($)))
+  // 只讀 $.state（讀了就訂閱，寫入時自動重畫），不讀檔
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const ui = await read($, panelUi)
+    const data = ui.open && !e.props.hasSurvey ? await read($, panelData) : null
+    return data
+      ? panelTree($.ui.resolve(e), { ...data, ...ui, columns: e.props.bodyColumns }, panelActions($))
+      : next(e)
+  })
 
   on('turn.complete', async ($, e, next) => {
     const out = await next(e)
     if (e.agentId !== undefined || busy) return out
+    // 別的 session 可能改了經驗檔或守門：每個回合結束重算一次面板快照（面板沒開時只讀一個 state）
+    await refreshPanel($)
     // 主對話又往前走了：沒有被攔下訊息的離席 handoff 已經過時
     const away = (await $.store.get(awayKey(await $.session.id()))) as Away | undefined
     if (away !== undefined && away.held === undefined) {
@@ -1555,7 +1562,11 @@ export const register: Register = on => {
       case 'continue': return keepOld($)
       case 'resend': return resend($)
       case 'refresh': return refreshCommand($, arg)
-      case 'guard': return guardCommand($, [arg, ...rest])
+      case 'guard': {
+        const r = await guardCommand($, [arg, ...rest])
+        await refreshPanel($)
+        return r
+      }
       case 'panel': return togglePanel($)
       default: return { text: `${tag} 不認得「${sub}」\n${USAGE}` }
     }

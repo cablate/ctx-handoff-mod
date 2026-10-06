@@ -107,7 +107,11 @@ const world = (on: On, tokens: number, window = 1_000_000, store: Record<string,
     }
     return { value: [...names].map(([name, kind]) => ({ name, kind, size: 0, mtimeMs: 0, isLink: false })) }
   })
-  on('fs.read', (_$, e: { path: string }) => files.has(norm(e.path)) ? { value: files.get(norm(e.path)) ?? '' } : { deny: 'missing' })
+  const reads: string[] = []
+  on('fs.read', (_$, e: { path: string }) => {
+    reads.push(norm(e.path))
+    return files.has(norm(e.path)) ? { value: files.get(norm(e.path)) ?? '' } : { deny: 'missing' }
+  })
   const writes: string[] = []
   on('fs.write', (_$, e: { path: string; text: string }) => {
     writes.push(norm(e.path))
@@ -162,7 +166,7 @@ const world = (on: On, tokens: number, window = 1_000_000, store: Record<string,
     rows.push({ role: 'user', text: e.text ?? '', toolUses: [] })
     return { text: e.text ?? '', context: e.context }
   })
-  return { clock, forks, commands, submits, contexts, toasts, files, logs, get, put, writes, completes, rows }
+  return { clock, forks, commands, submits, contexts, toasts, files, logs, get, put, reads, writes, completes, rows }
 }
 
 const NOTE_TAG = '[ctx-handoff 專案經驗]'
@@ -1414,6 +1418,24 @@ test('面板：長記憶依寬度截成一行，按展開才顯示全文', async
   expect(await ui.find({ type: 'Text', text: /結尾$/ })).toBeDefined()
   await ui.press({ key: `t:m:${long.slice(2)}` })
   expect(await ui.find({ type: 'Text', text: /結尾$/ })).toBeUndefined()
+})
+
+// 事故（2026-10-06）：每次重畫都重讀經驗檔與 store，切分頁卡住點不動
+test('面板：切分頁、展開與重畫只讀快照不讀檔；指令改了守門，面板跟著更新', async ($, on) => {
+  const w = world(on, 1000, 1_000_000, { 'guards:C--proj': [pushGuard('proposed')] })
+  w.files.set(NOTES_PATH, PANEL_NOTES)
+  const ui = await openPanel($)
+  w.reads.length = 0
+  for (const tab of ['memory', 'rules', 'distill', 'guard']) await ui.press({ key: `tab:${tab}` })
+  await ui.press({ key: 'tab:memory' })
+  expect(await ui.find({ type: 'Text', text: /使用者要求每次都先跑測試/ })).toBeDefined()
+  await ui.unmount()
+  const again = await $.ui.mount(BAND_MOUNT)
+  expect(await again.find({ type: 'Text', text: /使用者要求每次都先跑測試/ })).toBeDefined()
+  expect(w.reads).toEqual([])
+  await again.press({ key: 'tab:guard' })
+  await cmd($, 'guard on 1')
+  expect(await again.find({ type: 'Text', text: /啟用.*#1/ })).toBeDefined()
 })
 
 // ---------- 記憶的格式：給人看的標題＋給整理看的根據 ----------
