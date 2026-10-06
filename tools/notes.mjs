@@ -3,6 +3,7 @@
 // 用法：
 //   node tools/notes.mjs list <專案目錄名或檔案路徑>        列出編號與每條開頭
 //   node tools/notes.mjs apply <ops.json> [--write]           預設只預演；--write 才寫（寫前備份）
+//   node tools/notes.mjs roundtrip                           回歸檢查：每份真實經驗檔解析再輸出要逐位元相同（改解析或輸出後跑）
 // ops.json 是陣列，每項指定 file（專案目錄名或路徑）與 mem 或 rule（條目裡唯一的一段文字；rule 比對標題）：
 //   { "file": "C--Users-user", "mem": "某段文字", "op": "delete" }
 //   { "file": "...", "mem": "...", "op": "replace", "text": "- [user] 新內容" }
@@ -14,7 +15,7 @@
 // 每項都必須恰好比對到一條；任何一項不符就整批不寫。寫入前再讀一次，期間被改過就中止。
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname, basename } from 'node:path'
-import { claudeDir, parseNotes, NOTES_NAME } from './lib.mjs'
+import { claudeDir, notesFiles, parseNotes, NOTES_NAME } from './lib.mjs'
 
 const [cmd, arg] = process.argv.slice(2)
 const fileOf = f => (existsSync(f) ? f.replace(/\\/g, '/') : `${claudeDir()}/projects/${f}/memory/${NOTES_NAME}`)
@@ -91,4 +92,13 @@ if (cmd === 'list') {
     writeFileSync(d.file, render(d))
   }
   console.log(`已寫入；原檔備份在各檔旁的 .ctx-handoff-backup/${stamp}-${NOTES_NAME}`)
-} else fail('用法：node tools/notes.mjs list|apply …')
+} else if (cmd === 'roundtrip') {
+  let bad = 0
+  for (const { dir, file } of notesFiles()) {
+    const d = load(file)
+    const same = render(d) === d.text
+    if (!same) bad += 1
+    console.log(`${same ? 'SAME' : 'DIFF'} ${dir}`)
+  }
+  process.exit(bad ? 1 : 0)
+} else fail('用法：node tools/notes.mjs list|apply|roundtrip …')

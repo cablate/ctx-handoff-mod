@@ -29,7 +29,8 @@ node tools/status.mjs             # 確認各 session 已熱重載、看整理�
 - **記憶分成給人看與給整理看兩層**（維護者 2026-10-06 定案）：整理輸出 `title`（一句結論，提示 40 字、程式擋 60 字）、`how`／`why`（各一句，擋 100 字）、`evidence`；寫檔時排成標題行加縮排的 `做法／理由／根據` 行，根據由程式補日期與 session 前 8 碼，最多留 3 筆。`user`／`feedback` 一定要附 `quote`，程式比對這段對話裡使用者自己送出的訊息（`[ctx-handoff` 開頭的注入不算），比對不到就丟掉，防止把助理的做法記成使用者要求。面板預設只顯示標題。
 - **帶入依類型，不設條數上限；平常自動，人只管不可逆的事**（維護者 2026-10-06 決定，不改成字數上限）：`user`／`feedback` 整條帶入（標題、做法、理由）；`project`／`reference` 只帶標題，細節由 AI 需要時讀正本；事實類超過 `STALE_DAYS`（30）天沒有新根據就封存（不帶入、不刪），整理用 `confirm_memory` 加根據會恢復。整理不因條數多而刪除，只在被推翻或重複時刪或合併。刪除與啟用守門才需要人；面板的「留下」是選擇性的人工證實。規則目前只加字數上限（名稱 40、規則 150）。
 - **守門只採用使用者核准的**：`/handoff guard suggest` 把出現 3 次以上的規則交給 `DISTILL_MODEL` 提草稿（工具名、match／unless regex、deny 或 remind），程式驗證格式並試比對這段對話已跑過的工具呼叫，存成草稿；`/handoff guard on N` 才生效。設定依工作區存在 `$.store`（`guards:<工作區>`），不寫進經驗檔（不佔新對話 context）。`tool.call` hook 出錯時放行，不擋正常工作。
-- **面板只放要人判斷、按一下的事**：`/handoff panel` 開關輸入框上方的面板（`AbovePrompt`，畫面在 `hooks/panel.tsx`；不用 `Pane`，終端機全螢幕版面的 Pane 一定停靠側邊，維護者要放在輸入框上方），列守門草稿與核准、最近一次整理的變動、刪掉記錯的記憶或規則（按兩次確認，寫檔前備份到 `.ctx-handoff-backup/`）。狀態數字（快取、花費、context）留給 status line，不放面板（維護者 2026-10-06 決定）。
+- **面板只放要人判斷、按一下的事**：`/handoff panel` 開關輸入框上方的面板（`AbovePrompt`，畫面在 `hooks/panel.tsx`；不用 `Pane`，終端機全螢幕版面的 Pane 一定停靠側邊，維護者要放在輸入框上方），列守門草稿與核准、最近一次整理的變動、刪掉記錯的記憶或規則（按兩次確認，寫檔前備份到 `.ctx-handoff-backup/`）。狀態數字（快取、花費、context）留給 status line，不放面板（維護者 2026-10-06 決定）。render hook 只讀 `$.state` 的 `panelUi`（分頁、展開、確認中）與 `panelData`（資料快照），不讀檔也不讀 store；快照在開面板、按動作、`/handoff guard`、整理寫檔、守門觸發、回合結束時重算。每次重畫都讀檔會讓按鈕等 I/O，面板像卡死（2026-10-06）。
+- **`$.state` 放熱重載後還要接得上的 session 狀態**：面板與閒置計時（到期時間、刷新次數）。熱重載清掉計時器，`session.start` 依 `idle` 照原本的到期時間重排，過期超過 5 分鐘就不補。契約在 `types/index.d.ts`，加新的值要先宣告。跨 session 的資料仍放 `$.store`。
 - **指令名稱**：`/handoff` 被使用者自己的指令或 skill 佔用時，改註冊 `/ctx-handoff`。
 
 ## 平台事實（實測過）
@@ -46,7 +47,8 @@ node tools/status.mjs             # 確認各 session 已熱重載、看整理�
 | `$.store` | 所有 session 與 process 共用一個 JSON 檔（`<claude>/plugins/store/ctx-handoff_*.json`），鍵要依專案或 session 分開 |
 | `$.fs.write` | 會自動建立上層目錄 |
 | 時區 | 執行環境有本地時區：`toLocaleString` 是本地、`toISOString` 是 UTC |
-| 熱重載 | 對話檔留下 `ctx-handoff: reloaded (N hooks: …)`；會清掉模組變數（攔下的訊息、排入的差異、計時器），閒置中的 session 要等下一個回合結束才重新排計時器 |
+| 熱重載 | 對話檔留下 `ctx-handoff: reloaded (N hooks: …)`；回合中存的檔要等回合結束才重載（落在 `turn.complete` 之後）。會清掉模組變數與計時器（攔下的訊息、排入的差異），`$.state` 保留，`register` 與 `session.start` 重跑 |
+| `$.state` | session 範圍；render hook 讀了就訂閱，寫入只重畫讀它的地方，不用 `$.ui.invalidate`；render 裡不能寫，要從按鈕 handler 或其他事件用 `update()` 寫 |
 | 耗時 | handoff fork 在 800k context 約 28 秒 |
 
 ## 測試引擎的限制
@@ -55,4 +57,5 @@ node tools/status.mjs             # 確認各 session 已熱重載、看整理�
 - `mock.clock` 從 0 開始，不能拿 0 當「尚未開始」的哨兵值。
 - 沒有 `session.append` 的實作；`classic.Stop` 與 `turn.complete` 只在測試主動觸發時才跑、沒有先後，這些要靠實機驗證。
 - mock 收不到事件時，先另寫一個暫時的 `*.test.ts`，分別從測試的 `$` 直接呼叫與經由 plugin 呼叫，確認引擎行為再改測試。
+- 測試的 `$` 沒有 `$.state`；要放「熱重載前留下的值」，用 `on('state.get')` 回 `{ value: { value, version } }`。測試檔 import 到的模組和 plugin 不是同一份，不能拿來重設 plugin 的模組變數。
 - 要用沒實測過的 API（spawn、串流 hook、權限攔截）時，先做一個獨立的探測 mod，把逐步數據寫進 `$.store` 再分析，確認後才改這個 mod。

@@ -20,7 +20,7 @@ ctx-handoff handles these in the background. In normal use you type no commands.
 
 <img src="docs/distill-demo.gif" width="300" alt="Demo: the user repeats the same instruction three times and a new conversation forgets it; ctx-handoff turns it into a rule, and the next conversation remembers">
 
-([Full-quality MP4](docs/distill-demo.mp4). The demo text is in Traditional Chinese.)
+(The demo text is in Traditional Chinese.)
 
 ## Is it for you?
 
@@ -76,12 +76,27 @@ After about 55 idle minutes it sends a tiny request to keep the conversation cac
 
 Every so often it turns what you corrected or explained into notes for this project, loaded at the start of each new conversation:
 
-- **Memories:** preferences, decisions, constraints, where things live. The latest 40 are loaded.
+- **Memories:** four kinds: preferences, corrections, facts and locations. Preferences and corrections (kept only if they match something you actually said) are loaded in full; facts and locations load as titles only, and Claude opens the notes when it needs the details. Facts and locations not confirmed for 30 days are archived: not loaded, not deleted, and restored once confirmed again.
 - **Rules:** practices that keep coming up, e.g. "Use forward slashes in Bash paths (3 times)". Loaded once seen twice, up to 15.
 
 The notes are a plain Markdown file at `~/.claude/projects/<project path>/memory/ctx-handoff.md` that you can edit. When they change, a notice shows how many items changed and where the file is.
 
 Only the conversation since the last update is sent, to Sonnet 5.5 at low effort. On a short conversation that measured about 1,200 input tokens and 1.6 seconds. Anything that looks like a key or password is dropped before it reaches the notes.
+
+### Guards: turn repeated mistakes into automatic checks
+
+Once a rule has come up 3 or more times, `/handoff guard suggest` asks the model to write it as a check on tool calls (say, "git push without running tests"), set to block or just remind. Each draft is first tried against the tool calls already made in this conversation, and **nothing takes effect until you approve it with `/handoff guard on N`**. If a check itself fails, the call goes through, so normal work is never blocked.
+
+### Panel
+
+`/handoff panel` opens a panel above the prompt with four tabs: guards, memories, rules and the latest update. From it you can:
+
+- approve, turn off or delete guard drafts
+- see what the latest notes update changed
+- delete a wrong memory or rule (press twice to confirm; the file is backed up first)
+- press "留下" (keep) on an archived memory to load it again
+
+Click the buttons, or press ctrl+x tab to give the panel the keyboard and 1–4 to switch tabs. Type `/handoff panel` again to close it.
 
 ## Commands
 
@@ -98,6 +113,8 @@ You won't need these in normal use. If `/handoff` is already taken by your own c
 | `/handoff resend` | Send the handoff summary again if it didn't arrive |
 | `/handoff refresh on\|off` | Turn keeping the cache warm on or off |
 | `/handoff distill on\|off` | Turn project notes on or off |
+| `/handoff panel` | Open or close the panel above the prompt |
+| `/handoff guard` | List guards; `suggest` drafts new ones, `on\|off\|drop N` approves, turns off or deletes one, `mode N deny\|remind` switches between blocking and reminding |
 
 ## Settings
 
@@ -119,7 +136,7 @@ Settings are constants at the top of [`hooks/register.ts`](hooks/register.ts) an
 - **On a 5-minute cache, turn cache keeping off.** API-key, Bedrock and Vertex users, and subscribers into usage credits, get a 5-minute cache, so a request at 55 minutes rewrites the whole cache. Run `/handoff refresh off`; it isn't detected automatically.
 - **Cache keeping isn't fully confirmed.** It's not yet certain the request actually extends the main conversation's cache.
 - **Notes follow the folder you start in.** Work on another project from your home folder is noted under your home folder.
-- **Changing settings or updating the mod resets timers**, and a message held during a handoff may be lost.
+- **Updating the mod or changing settings during a handoff may lose a held message.** The idle cache timer isn't affected; it picks up where it left off.
 
 ## Upgrading from 0.1
 
