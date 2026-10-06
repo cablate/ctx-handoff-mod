@@ -829,7 +829,7 @@ async function distill($: EngineInterface, why: string, queue = true) {
 async function showDistillStatus($: EngineInterface, running?: string) {
   if (deferral) return
   if (!(await isDistillOn($))) return $.ui.status(undefined)
-  if (running) return $.ui.status(`${tag} 整理中（${running}）`)
+  if (running) return $.ui.status(`${tag} 整理中`)
   $.ui.status(`${tag} 整理 ${await sinceDistill($)}/${DISTILL_EVERY}`)
 }
 
@@ -852,7 +852,7 @@ async function distillStatus($: EngineInterface) {
   const tiers = memoryTiers(notes, localStamp(await $.clock.now()).slice(0, 10))
   return [
     `背景整理 ${on ? 'on' : 'off'}（閒置刷新、離席、交接前、每 ${DISTILL_EVERY} 則）`,
-    ...(on ? [`　下次：再 ${Math.max(0, DISTILL_EVERY - (await sinceDistill($)))} 則訊息，或閒置 ${IDLE_MS / 60_000} 分鐘、交接前（context 未達 ${MIN_TOKENS} 不整理）`] : []),
+    ...(on ? [`　下次：再 ${Math.max(0, DISTILL_EVERY - (await sinceDistill($)))} 則，或閒置 ${IDLE_MS / 60_000} 分、交接前`] : []),
     d ? `　上次：${new Date(d.at).toLocaleString()}・${d.why}・${d.changes.length} 項變動` : '　上次：無',
     ...(d ? [`　${d.usage}`, ...d.changes.map(c => `　・${c}`)] : []),
     ...(d?.rejected?.count ? [`　丟棄 ${d.rejected.count} 行無效輸出：${d.rejected.samples.join(' ／ ')}`] : []),

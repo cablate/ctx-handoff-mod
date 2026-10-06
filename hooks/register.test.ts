@@ -325,13 +325,13 @@ test('handoff：不帶參數顯示狀態和用法，不認得的子指令只回�
 const NOTES = 'C:/Users/u/.claude/projects/C--proj/memory/ctx-handoff.md'
 const distillNow = ($: Engine) => cmd($, 'distill')
 
-test('狀態列顯示整理進度：平常是距離下次幾則，整理中顯示原因，整理完歸零', async ($, on) => {
+test('狀態列顯示整理進度：平常是累積幾則，整理時顯示整理中，整理完歸零', async ($, on) => {
   const w = world(on, 100_000, 1_000_000, {}, [], 5)
   await endTurn($)
   expect(w.statuses.at(-1)).toBe('[ctx-handoff] 整理 5/30')
-  expect((await cmd($, '')).text).toContain('下次：再 25 則訊息')
+  expect((await cmd($, '')).text).toContain('下次：再 25 則')
   await distillNow($)
-  expect(w.statuses).toContain('[ctx-handoff] 整理中（手動）')
+  expect(w.statuses).toContain('[ctx-handoff] 整理中')
   expect(w.statuses.at(-1)).toBe('[ctx-handoff] 整理 0/30')
   await cmd($, 'distill off')
   expect(w.statuses.at(-1)).toBeUndefined()

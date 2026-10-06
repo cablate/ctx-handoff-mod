@@ -74,31 +74,24 @@ After about 55 idle minutes it sends a tiny request to keep the conversation cac
 
 ### Project notes
 
-It turns what you corrected or explained into notes for this project, loaded at the start of each new conversation. Notes are updated every 30 messages, when the cache is kept warm after 55 idle minutes, and before a handoff; `/handoff distill` updates them now (conversations under 30k tokens are skipped). The status line shows `整理 12/30`, the messages since the last update out of 30, and `整理中（reason）` while an update runs.
+What you correct or explain becomes notes for this project, loaded into each new conversation.
 
-There are two kinds of notes:
+**When it updates:** every 30 messages, after 55 idle minutes, before a handoff, or on `/handoff distill`. The status line shows `整理 12/30` (messages so far) and `整理中` while updating. Conversations under 30k tokens are skipped.
 
-- **Memories:** four kinds: preferences, corrections, facts and locations. Preferences and corrections (kept only if they match something you actually said) are loaded in full; facts and locations load as titles only, and Claude opens the notes when it needs the details. Facts and locations not confirmed for 30 days are archived: not loaded, not deleted, and restored once confirmed again.
-- **Rules:** practices that keep coming up, e.g. "Use forward slashes in Bash paths (3 times)". Loaded once seen twice, up to 15.
+- **Memories:** preferences, corrections, facts and locations. Preferences and corrections load in full (only if they match something you said); facts and locations load as titles, and Claude reads the rest when needed. Facts and locations unconfirmed for 30 days are archived: not loaded, not deleted.
+- **Rules:** recurring practices, e.g. "Use forward slashes in Bash paths (3 times)". Loaded once seen twice, up to 15.
 
-The notes are a plain Markdown file at `~/.claude/projects/<project path>/memory/ctx-handoff.md` that you can edit. When they change, a notice shows how many items changed and where the file is.
+The notes are one Markdown file you can edit: `~/.claude/projects/<project path>/memory/ctx-handoff.md`.
 
-Only the conversation since the last update is sent, to Sonnet 5.5 at low effort. On a short conversation that measured about 1,200 input tokens and 1.6 seconds. Anything that looks like a key or password is dropped before it reaches the notes.
+Only new conversation since the last update goes to Sonnet 5.5 at low effort; a short one takes about 1,200 tokens and 1.6 seconds. Anything that looks like a key or password is left out.
 
-### Guards: turn repeated mistakes into automatic checks
+### Guards
 
-Once a rule has come up 3 or more times, `/handoff guard suggest` asks the model to write it as a check on tool calls (say, "git push without running tests"), set to block or just remind. Each draft is first tried against the tool calls already made in this conversation, and **nothing takes effect until you approve it with `/handoff guard on N`**. If a check itself fails, the call goes through, so normal work is never blocked.
+Once a rule comes up 3 times, `/handoff guard suggest` turns it into a check on tool calls, e.g. "git push without running tests", set to block or remind. **Nothing applies until you approve it with `/handoff guard on N`**; if a check fails, the call goes through.
 
 ### Panel
 
-`/handoff panel` opens a panel above the prompt with four tabs: guards, memories, rules and the latest update. From it you can:
-
-- approve, turn off or delete guard drafts
-- see what the latest notes update changed
-- delete a wrong memory or rule (press twice to confirm; the file is backed up first)
-- press "留下" (keep) on an archived memory to load it again
-
-Click the buttons, or press ctrl+x tab to give the panel the keyboard and 1–4 to switch tabs. Type `/handoff panel` again to close it.
+`/handoff panel` opens a panel above the prompt: approve guards, see the latest notes update, delete wrong notes (press twice; backed up first), keep archived memories. Press ctrl+x tab, then 1–4 to switch tabs; run the command again to close it.
 
 ## Commands
 
@@ -138,7 +131,7 @@ Settings are constants at the top of [`hooks/register.ts`](hooks/register.ts) an
 - **On a 5-minute cache, turn cache keeping off.** API-key, Bedrock and Vertex users, and subscribers into usage credits, get a 5-minute cache, so a request at 55 minutes rewrites the whole cache. Run `/handoff refresh off`; it isn't detected automatically.
 - **Cache keeping isn't fully confirmed.** It's not yet certain the request actually extends the main conversation's cache.
 - **Notes follow the folder you start in.** Work on another project from your home folder is noted under your home folder.
-- **Updating the mod or changing settings during a handoff may lose a held message.** The idle cache timer isn't affected; it picks up where it left off.
+- **Updating the mod or settings mid-handoff may lose a held message.** The cache timer isn't affected.
 
 ## Upgrading from 0.1
 
