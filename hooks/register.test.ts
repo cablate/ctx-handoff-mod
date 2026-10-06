@@ -229,6 +229,39 @@ test('門檻以下閒置：刷新 3 次後存離席 handoff，不 /clear', async
   expect(w.submits[0]).toContain('HANDOFF: 測試')
 })
 
+// 事故（2026-10-06）：回合結束後才熱重載，計時器被清掉，到下個回合前都不刷新，快取過期
+// 熱重載後的新模組沒有計時器，只看得到 $.state 裡的紀錄，session.start 再跑一次
+// 熱重載前留下的紀錄：第一次讀 idle 時給它，之後交給引擎
+const savedIdle = (on: On, value: { due: number; refreshes: number }) => {
+  let given = false
+  on('state.get', (_$, e, next) => {
+    if (given || e.key !== 'idle') return next(e)
+    given = true
+    return { value: { value, version: 1 } } as never
+  })
+}
+
+test('熱重載後接回閒置計時：照原本的到期時間刷新，刷新次數接著算', async ($, on) => {
+  const w = world(on, 100_000)
+  savedIdle(on, { due: 25 * 60_000, refreshes: 1 })
+  await startSession($)
+  await w.clock.advance(25 * 60_000)
+  expect(w.forks).toEqual(['只回覆 OK'])
+  await w.clock.advance(55 * 60_000)
+  expect(w.forks.length).toBe(2)
+  await w.clock.advance(55 * 60_000)
+  expect(w.forks[2]).toContain('HANDOFF')
+})
+
+test('熱重載時計時早已過期：不補刷新', async ($, on) => {
+  const w = world(on, 100_000)
+  await w.clock.set(70 * 60_000)
+  savedIdle(on, { due: 55 * 60_000, refreshes: 0 })
+  await startSession($)
+  await w.clock.advance(2 * 60 * 60_000)
+  expect(w.forks).toEqual([])
+})
+
 test('刷新關閉：閒置 55 分鐘直接存離席 handoff', async ($, on) => {
   const w = world(on, 100_000, 1_000_000, { refresh: false })
   await endTurn($)

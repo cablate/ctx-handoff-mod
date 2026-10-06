@@ -845,13 +845,30 @@ async function distillStatus($: EngineInterface) {
   ].join('\n')
 }
 
-function schedule($: EngineInterface) {
+// 到期時間與刷新次數另存 $.state：熱重載會清掉計時器與模組變數，session.start 依它重排
+const idleState = atom({ plugin: 'ctx-handoff', key: 'idle' } as const, null)
+// 熱重載時已過期多久還補刷新：超過就當快取已失效（TTL 60 分、刷新排在 55 分）
+const RELOAD_GRACE_MS = 5 * 60_000
+
+async function schedule($: EngineInterface, delay = IDLE_MS) {
   idle?.cancel()
-  idle = $.clock.after(IDLE_MS, () => void onIdle($))
+  idle = $.clock.after(delay, () => void onIdle($))
+  const due = (await $.clock.now()) + delay
+  await update($, idleState, () => ({ due, refreshes }))
+}
+
+async function resumeSchedule($: EngineInterface) {
+  const saved = await read($, idleState)
+  if (!saved || idle) return
+  const left = saved.due - (await $.clock.now())
+  if (left < -RELOAD_GRACE_MS) return
+  refreshes = saved.refreshes
+  await schedule($, Math.max(0, left))
 }
 
 async function onIdle($: EngineInterface) {
   idle = undefined
+  await update($, idleState, () => null)
   if (busy) return
   const { context } = await $.session.usage()
   const tokens = context.tokens ?? 0
@@ -865,7 +882,7 @@ async function onIdle($: EngineInterface) {
     $.ui.log(r.isAnswered
       ? `${tag} 快取刷新 ${refreshes}/${MAX_REFRESH} cache_read=${r.usage.cache_read_input_tokens} cache_creation=${r.usage.cache_creation_input_tokens}`
       : `${tag} 快取刷新 ${refreshes}/${MAX_REFRESH} 失敗：${r.reason}`)
-    schedule($)
+    await schedule($)
     return
   }
 
@@ -1012,6 +1029,7 @@ async function onStop($: EngineInterface, e: { agent_id?: string; background_tas
 
 // 重設所有程序內狀態（模組重新載入或測試重跑時）
 function resetState() {
+  idle?.cancel()
   idle = undefined
   refreshes = 0
   busy = false
@@ -1396,6 +1414,12 @@ export const register: Register = on => {
         $.ui.log(`${tag} 指令註冊失敗：${String(err2)}`)
       }
     }
+    // 熱重載也會跑到這裡：接回被清掉的閒置計時
+    try {
+      await resumeSchedule($)
+    } catch (err) {
+      $.ui.log(`${tag} 接回閒置計時失敗：${String(err)}`)
+    }
     try {
       await prune($)
     } catch (err) {
@@ -1458,7 +1482,7 @@ export const register: Register = on => {
       $.ui.log(`${tag} 對話已繼續，刪除過時的離席 handoff`)
     }
     // 每個回合都用到快取，TTL 從這裡重算
-    schedule($)
+    await schedule($)
     if (e.reason !== 'answer') return out
     const { context } = await $.session.usage()
     // 到門檻的交接由 classic.Stop 判斷；這裡只處理還沒到門檻的整理
@@ -1507,6 +1531,7 @@ export const register: Register = on => {
     idle?.cancel()
     idle = undefined
     refreshes = 0
+    await update($, idleState, () => null)
     const sid = await $.session.id()
     // 背景整理的錨點：下次從這則訊息之後開始
     if (!isSlash && e.text.trim()) {

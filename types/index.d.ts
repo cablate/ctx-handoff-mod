@@ -36,8 +36,11 @@ export type PanelUi = {
   note?: string
 }
 
+// 閒置刷新計時：到期時間（clock 毫秒）與這次閒置已刷新幾次；熱重載後依它重排計時器
+export type IdleState = { due: number; refreshes: number }
+
 declare module 'claude-code' {
   interface PluginState {
-    'ctx-handoff': { panelUi: PanelUi; panelData: PanelData | null }
+    'ctx-handoff': { panelUi: PanelUi; panelData: PanelData | null; idle: IdleState | null }
   }
 }
