@@ -73,7 +73,8 @@ const world = (on: On, tokens: number, window = 1_000_000, store: Record<string,
   curCwd = 'C:/proj'
   const clock = mock.clock(on)
   on('ui.log', (_$, e: unknown) => { logs.push(JSON.stringify(e)); return { value: undefined } })
-  on('ui.status', () => ({ value: undefined }))
+  const statuses: (string | undefined)[] = []
+  on('ui.status', (_$, e: { text?: string }) => { statuses.push(e.text); return { value: undefined } })
   on('ui.toast', (_$, e: unknown) => { toasts.push(JSON.stringify(e)); return { value: undefined } })
   // 自己的 store：測試要直接讀寫（$.store 不在測試引擎的 $ 上）；值經過 JSON 來回，和真的一樣
   const kv = new Map<string, unknown>(Object.entries(store))
@@ -165,7 +166,7 @@ const world = (on: On, tokens: number, window = 1_000_000, store: Record<string,
     rows.push({ role: 'user', text: e.text ?? '', toolUses: [] })
     return { text: e.text ?? '', context: e.context }
   })
-  return { clock, forks, commands, submits, contexts, toasts, files, logs, get, put, reads, writes, completes, rows }
+  return { clock, forks, commands, submits, contexts, toasts, files, logs, get, put, reads, writes, completes, rows, statuses }
 }
 
 const NOTE_TAG = '[ctx-handoff 專案經驗]'
@@ -323,6 +324,18 @@ test('handoff：不帶參數顯示狀態和用法，不認得的子指令只回�
 
 const NOTES = 'C:/Users/u/.claude/projects/C--proj/memory/ctx-handoff.md'
 const distillNow = ($: Engine) => cmd($, 'distill')
+
+test('狀態列顯示整理進度：平常是距離下次幾則，整理中顯示原因，整理完歸零', async ($, on) => {
+  const w = world(on, 100_000, 1_000_000, {}, [], 5)
+  await endTurn($)
+  expect(w.statuses.at(-1)).toBe('[ctx-handoff] 整理 5/30')
+  expect((await cmd($, '')).text).toContain('下次：再 25 則訊息')
+  await distillNow($)
+  expect(w.statuses).toContain('[ctx-handoff] 整理中（手動）')
+  expect(w.statuses.at(-1)).toBe('[ctx-handoff] 整理 0/30')
+  await cmd($, 'distill off')
+  expect(w.statuses.at(-1)).toBeUndefined()
+})
 
 test('閒置刷新順便整理：寫入專案經驗檔、濾掉疑似金鑰、差異排入下一則訊息，沒新訊息就只刷新', async ($, on) => {
   const w = world(on, 100_000, 1_000_000, {}, [], 5)

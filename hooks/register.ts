@@ -756,6 +756,7 @@ async function distill($: EngineInterface, why: string, queue = true) {
   if (turns <= (prev?.turn ?? 0)) return undefined
   distilling = true
   distillFailed = false
+  await showDistillStatus($, why)
   const fail = async (reason: string) => {
     distillFailed = true
     $.ui.log(`${tag} 背景整理失敗（${why}）：${reason}`)
@@ -820,7 +821,22 @@ async function distill($: EngineInterface, why: string, queue = true) {
     return undefined
   } finally {
     distilling = false
+    await showDistillStatus($)
   }
+}
+
+// 狀態列：整理中顯示原因，平常顯示距離下次「每 N 則」整理還差幾則；handoff 延後時讓給延後訊息
+async function showDistillStatus($: EngineInterface, running?: string) {
+  if (deferral) return
+  if (!(await isDistillOn($))) return $.ui.status(undefined)
+  if (running) return $.ui.status(`${tag} 整理中（${running}）`)
+  $.ui.status(`${tag} 整理 ${await sinceDistill($)}/${DISTILL_EVERY}`)
+}
+
+// 上次整理之後的使用者訊息數
+async function sinceDistill($: EngineInterface) {
+  const last = ((await $.store.get(`distill:${await $.session.id()}`)) as { turn: number } | undefined)?.turn ?? 0
+  return Math.max(0, (await $.session.turns()) - last)
 }
 
 type DistillLast = { at: number; why: string; changes: Change[]; file: string; usage: string; rejected?: Rejected }
@@ -836,6 +852,7 @@ async function distillStatus($: EngineInterface) {
   const tiers = memoryTiers(notes, localStamp(await $.clock.now()).slice(0, 10))
   return [
     `背景整理 ${on ? 'on' : 'off'}（閒置刷新、離席、交接前、每 ${DISTILL_EVERY} 則）`,
+    ...(on ? [`　下次：再 ${Math.max(0, DISTILL_EVERY - (await sinceDistill($)))} 則訊息，或閒置 ${IDLE_MS / 60_000} 分鐘、交接前（context 未達 ${MIN_TOKENS} 不整理）`] : []),
     d ? `　上次：${new Date(d.at).toLocaleString()}・${d.why}・${d.changes.length} 項變動` : '　上次：無',
     ...(d ? [`　${d.usage}`, ...d.changes.map(c => `　・${c}`)] : []),
     ...(d?.rejected?.count ? [`　丟棄 ${d.rejected.count} 行無效輸出：${d.rejected.samples.join(' ／ ')}`] : []),
@@ -1414,6 +1431,9 @@ export const register: Register = on => {
         $.ui.log(`${tag} 指令註冊失敗：${String(err2)}`)
       }
     }
+    try {
+      await showDistillStatus($)
+    } catch {}
     // 熱重載也會跑到這裡：接回被清掉的閒置計時
     try {
       await resumeSchedule($)
@@ -1488,12 +1508,10 @@ export const register: Register = on => {
     // 到門檻的交接由 classic.Stop 判斷；這裡只處理還沒到門檻的整理
     if (context.tokens !== undefined && context.tokens >= thresholdOf(context.window)) return out
     // 每 DISTILL_EVERY 則使用者訊息，趁快取熱整理一次
-    if ((context.tokens ?? 0) >= MIN_TOKENS && !distilling && (await isDistillOn($))) {
-      const last = ((await $.store.get(`distill:${await $.session.id()}`)) as { turn: number } | undefined)?.turn ?? 0
-      if ((await $.session.turns()) - last >= DISTILL_EVERY) {
-        $.clock.after(0, () => void distill($, `每 ${DISTILL_EVERY} 則`))
-      }
+    if ((context.tokens ?? 0) >= MIN_TOKENS && !distilling && (await isDistillOn($)) && (await sinceDistill($)) >= DISTILL_EVERY) {
+      $.clock.after(0, () => void distill($, `每 ${DISTILL_EVERY} 則`))
     }
+    if (!distilling) await showDistillStatus($)
     return out
   })
 
@@ -1667,6 +1685,7 @@ async function handoffDry($: EngineInterface) {
 async function distillCommand($: EngineInterface, arg: string) {
   if (arg === 'on' || arg === 'off') {
     await $.store.set('distill', arg === 'on')
+    await showDistillStatus($)
     return { text: `${tag} 背景整理已設為 ${arg}` }
   }
   if (arg !== '') return { text: `${tag} 用法 /handoff distill（立刻整理）或 /handoff distill on|off` }

@@ -74,7 +74,9 @@ After about 55 idle minutes it sends a tiny request to keep the conversation cac
 
 ### Project notes
 
-Every so often it turns what you corrected or explained into notes for this project, loaded at the start of each new conversation:
+It turns what you corrected or explained into notes for this project, loaded at the start of each new conversation. Notes are updated every 30 messages, when the cache is kept warm after 55 idle minutes, and before a handoff; `/handoff distill` updates them now (conversations under 30k tokens are skipped). The status line shows `整理 12/30`, the messages since the last update out of 30, and `整理中（reason）` while an update runs.
+
+There are two kinds of notes:
 
 - **Memories:** four kinds: preferences, corrections, facts and locations. Preferences and corrections (kept only if they match something you actually said) are loaded in full; facts and locations load as titles only, and Claude opens the notes when it needs the details. Facts and locations not confirmed for 30 days are archived: not loaded, not deleted, and restored once confirmed again.
 - **Rules:** practices that keep coming up, e.g. "Use forward slashes in Bash paths (3 times)". Loaded once seen twice, up to 15.
