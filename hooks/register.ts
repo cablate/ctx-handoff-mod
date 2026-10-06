@@ -604,8 +604,8 @@ async function makeHandoff($: EngineInterface, kind: Kind, tokens: number | null
   const started = await $.clock.now()
   const r = await forkWithin($, HANDOFF_PROMPT, HANDOFF_TIMEOUT_MS)
   if (!r.isAnswered) {
-    $.ui.log(`${tag} handoff 產生失敗：${forkFailure(r.reason)}`)
-    $.ui.toast(`${tag} handoff 產生失敗`)
+    $.ui.log(`handoff 產生失敗：${forkFailure(r.reason)}`)
+    $.ui.toast(`handoff 產生失敗`)
     await recordFailure($, kind, tokens, `產生失敗：${forkFailure(r.reason)}`)
     return undefined
   }
@@ -622,7 +622,7 @@ async function makeHandoff($: EngineInterface, kind: Kind, tokens: number | null
   const list = ((await $.store.get(handoffsKey)) as Saved[] | undefined) ?? []
   await $.store.set(handoffsKey, [...list, saved].slice(-KEEP))
   lastHandoff = { text: r.text }
-  $.ui.log(`${tag} handoff（${kind}）${describeUsage(usage)}`)
+  $.ui.log(`handoff（${kind}）${describeUsage(usage)}`)
   return r.text
 }
 
@@ -759,7 +759,7 @@ async function distill($: EngineInterface, why: string, queue = true) {
   await showDistillStatus($, why)
   const fail = async (reason: string) => {
     distillFailed = true
-    $.ui.log(`${tag} 背景整理失敗（${why}）：${reason}`)
+    $.ui.log(`背景整理失敗（${why}）：${reason}`)
     await $.store.set(`distill:error:${await projectKey($)}`, { at: await $.clock.now(), why, reason })
   }
   try {
@@ -793,7 +793,7 @@ async function distill($: EngineInterface, why: string, queue = true) {
     // 整理期間經驗檔被改過：編號對不上，這次不寫也不推進進度，下次重新整理同一段
     if ((await readText($, file)) !== original) {
       const reason = `整理期間經驗檔被修改，這次略過：${file}`
-      $.ui.log(`${tag} 背景整理（${why}）${reason}`)
+      $.ui.log(`背景整理（${why}）${reason}`)
       await $.store.set(`distill:error:${await projectKey($)}`, { at: now, why, reason })
       distillFailed = true
       return r
@@ -805,15 +805,15 @@ async function distill($: EngineInterface, why: string, queue = true) {
     const usage = describeUsage({ input: r.usage.input_tokens, cacheRead: r.usage.cache_read_input_tokens, cacheCreation: r.usage.cache_creation_input_tokens, output: r.usage.output_tokens, ms: now - started })
     await $.store.set(`distill:last:${await projectKey($)}`, { at: now, why, changes, file, usage, rejected } satisfies DistillLast)
     await refreshPanel($)
-    $.ui.log(`${tag} 背景整理（${why}）：${changes.length} 項變動${rejected.count ? `，丟棄 ${rejected.count} 行無效輸出` : ''}${changes.length ? `；寫入 ${file}` : ''}`)
+    $.ui.log(`背景整理（${why}）：${changes.length} 項變動${rejected.count ? `，丟棄 ${rejected.count} 行無效輸出` : ''}${changes.length ? `；寫入 ${file}` : ''}`)
     // 先寫檔再排入；差異跟著下一則真正送進對話的訊息帶入（見 prompt.submit）
     if (changes.length > 0 && queue) {
       pendingNotes.set(sid, { changes: [...(pendingNotes.get(sid)?.changes ?? []), ...changes], file })
-      $.ui.log(`${tag} ${changes.length} 項變動排入下一則訊息`)
+      $.ui.log(`${changes.length} 項變動排入下一則訊息`)
     }
     // 讓使用者看得到：寫了哪份檔案（完整路徑），不送訊息、不花 token
     if (changes.length > 0) {
-      $.ui.toast(`${tag} 經驗已更新 ${changes.length} 項${queue ? '，會跟著你下一則訊息帶入' : ''}：${file}`)
+      $.ui.toast(`經驗已更新 ${changes.length} 項${queue ? '，會跟著你下一則訊息帶入' : ''}：${file}`)
     }
     return r
   } catch (err) {
@@ -829,8 +829,10 @@ async function distill($: EngineInterface, why: string, queue = true) {
 async function showDistillStatus($: EngineInterface, running?: string) {
   if (deferral) return
   if (!(await isDistillOn($))) return $.ui.status(undefined)
-  if (running) return $.ui.status(`${tag} 整理中`)
-  $.ui.status(`${tag} 整理 ${await sinceDistill($)}/${DISTILL_EVERY}`)
+  if (running) return $.ui.status('正在整理筆記…')
+  const left = DISTILL_EVERY - (await sinceDistill($))
+  if (left > 0) return $.ui.status(`再 ${left} 則整理筆記`)
+  $.ui.status(((await $.session.usage()).context.tokens ?? 0) < MIN_TOKENS ? '對話還短，先不整理筆記' : '下一則後整理筆記')
 }
 
 // 上次整理之後的使用者訊息數
@@ -911,8 +913,8 @@ async function onIdle($: EngineInterface) {
     const key = awayKey(await $.session.id())
     await $.store.set(key, { handoff } satisfies Away)
     await touchSeen($, key)
-    $.ui.log(`${tag} 離席 handoff 已存好（${tokens} tokens），不會自動 /clear`)
-    $.ui.toast(`${tag} 離席 handoff 已存好`)
+    $.ui.log(`離席 handoff 已存好（${tokens} tokens），不會自動 /clear`)
+    $.ui.toast(`離席 handoff 已存好`)
   } finally {
     busy = false
   }
@@ -944,7 +946,7 @@ async function present($: EngineInterface, tokens: number | null, kind: 'present
     }
   }
   const resubmit = async (batch: string) => {
-    try { await submitText($, batch) } catch (err) { $.ui.log(`${tag} 重新送出交接期間的訊息失敗：${String(err)}`) }
+    try { await submitText($, batch) } catch (err) { $.ui.log(`重新送出交接期間的訊息失敗：${String(err)}`) }
   }
   try {
     // 交接 fork 和 /clear 前的最後整理同時發出：快取都熱著
@@ -964,13 +966,13 @@ async function present($: EngineInterface, tokens: number | null, kind: 'present
     const text = `${intro}${note ? `（${note}）` : ''}\n\n${handoff}${included.length ? `\n\n${heldBlock(included)}` : ''}`
     const failed = await clearAndSubmit($, text)
     if (failed?.stage === 'clear') {
-      $.ui.log(`${tag} /clear 失敗：${failed.reason}`)
+      $.ui.log(`/clear 失敗：${failed.reason}`)
       await recordFailure($, kind, tokens, `clear 失敗：${failed.reason}`, sid)
       delivered = 0
       await drain(resubmit)
     } else if (failed) {
-      $.ui.log(`${tag} 送出失敗：${failed.reason}`)
-      $.ui.toast(`${tag} handoff 已產生但送出失敗，/handoff resend 重送`)
+      $.ui.log(`送出失敗：${failed.reason}`)
+      $.ui.toast(`handoff 已產生但送出失敗，/handoff resend 重送`)
       await recordFailure($, kind, tokens, `送出失敗：${failed.reason}`, sid)
       // 文字建好之後才到的訊息：補進這份 pendingSubmit，重送時一起送
       let pending = text
@@ -985,13 +987,13 @@ async function present($: EngineInterface, tokens: number | null, kind: 'present
       await drain(resubmit)
     }
   } catch (err) {
-    $.ui.log(`${tag} 交接失敗：${String(err)}`)
+    $.ui.log(`交接失敗：${String(err)}`)
     try {
       await recordFailure($, kind, tokens, `例外：${String(err)}`, sid)
       delivered = 0
       await drain(resubmit)
     } catch (err2) {
-      $.ui.log(`${tag} 交接失敗後的處理也失敗：${String(err2)}`)
+      $.ui.log(`交接失敗後的處理也失敗：${String(err2)}`)
     }
   } finally {
     presenting = false
@@ -1024,17 +1026,17 @@ async function onStop($: EngineInterface, e: { agent_id?: string; background_tas
     const cap = Math.min(Math.floor(context.window * DEFER_CAP_RATIO), threshold + DEFER_CAP_EXTRA)
     if (tokens < cap) {
       deferral = `${parts.join('、')}還在，等它們結束再 handoff（上限 ${cap} tokens）`
-      $.ui.status(`${tag} handoff 延後：${parts.join('、')}`)
-      $.ui.log(`${tag} context ${tokens} 已達門檻，但有${parts.join('、')}，等它們結束再 handoff`)
-      if (!deferToasted) { deferToasted = true; $.ui.toast(`${tag} handoff 延後：${parts.join('、')}`) }
+      $.ui.status(`handoff 延後：${parts.join('、')}`)
+      $.ui.log(`context ${tokens} 已達門檻，但有${parts.join('、')}，等它們結束再 handoff`)
+      if (!deferToasted) { deferToasted = true; $.ui.toast(`handoff 延後：${parts.join('、')}`) }
       return
     }
     note = `交接時仍有${parts.join('、')}在執行，context 已達上限 ${cap}`
-    $.ui.log(`${tag} context ${tokens} 達上限 ${cap}，不再等${parts.join('、')}，直接 handoff`)
+    $.ui.log(`context ${tokens} 達上限 ${cap}，不再等${parts.join('、')}，直接 handoff`)
   }
   // 上次失敗不久：先不重試
   if (retryAfter && (await $.session.turns()) - retryAfter.turns < RETRY_TURNS && (await $.clock.now()) - retryAfter.at < RETRY_MS) {
-    $.ui.log(`${tag} context ${tokens} 已達門檻，但上次 handoff 失敗不久，稍後再試`)
+    $.ui.log(`context ${tokens} 已達門檻，但上次 handoff 失敗不久，稍後再試`)
     return
   }
   deferral = undefined
@@ -1426,9 +1428,9 @@ export const register: Register = on => {
     } catch (err) {
       try {
         await $.command.register({ name: 'ctx-handoff', description })
-        $.ui.log(`${tag} /handoff 已被佔用（${String(err)}），改用 /ctx-handoff`)
+        $.ui.log(`/handoff 已被佔用（${String(err)}），改用 /ctx-handoff`)
       } catch (err2) {
-        $.ui.log(`${tag} 指令註冊失敗：${String(err2)}`)
+        $.ui.log(`指令註冊失敗：${String(err2)}`)
       }
     }
     try {
@@ -1438,12 +1440,12 @@ export const register: Register = on => {
     try {
       await resumeSchedule($)
     } catch (err) {
-      $.ui.log(`${tag} 接回閒置計時失敗：${String(err)}`)
+      $.ui.log(`接回閒置計時失敗：${String(err)}`)
     }
     try {
       await prune($)
     } catch (err) {
-      $.ui.log(`${tag} 啟動時整理 store 失敗：${String(err)}`)
+      $.ui.log(`啟動時整理 store 失敗：${String(err)}`)
     }
     return next(e)
   })
@@ -1467,13 +1469,13 @@ export const register: Register = on => {
       const text = inputText(e as Record<string, unknown>)
       hit = (await loadGuards($)).find(g => g.state === 'on' && guardHits(g, e.tool, text))
     } catch (err) {
-      $.ui.log(`${tag} 守門比對失敗，放行：${String(err)}`)
+      $.ui.log(`守門比對失敗，放行：${String(err)}`)
     }
     if (!hit) return next(e)
     await recordHit($, hit.id)
     const head = `${tag} 守門 #${hit.id}（${hit.rule}）：${hit.message}`
     if (hit.mode === 'deny') {
-      $.ui.toast(`${tag} 守門 #${hit.id} 擋下 ${e.tool}：${hit.rule}`)
+      $.ui.toast(`守門 #${hit.id} 擋下 ${e.tool}：${hit.rule}`)
       return { deny: `${head}\n使用者確定要照原樣執行時，請使用者先執行 /handoff guard off ${hit.id}。` }
     }
     const r = await next(e)
@@ -1499,7 +1501,7 @@ export const register: Register = on => {
     const away = (await $.store.get(awayKey(await $.session.id()))) as Away | undefined
     if (away !== undefined && away.held === undefined) {
       await $.store.delete(awayKey(await $.session.id()))
-      $.ui.log(`${tag} 對話已繼續，刪除過時的離席 handoff`)
+      $.ui.log(`對話已繼續，刪除過時的離席 handoff`)
     }
     // 每個回合都用到快取，TTL 從這裡重算
     await schedule($)
@@ -1522,7 +1524,7 @@ export const register: Register = on => {
     try {
       await onStop($, e)
     } catch (err) {
-      $.ui.log(`${tag} Stop 判斷失敗：${String(err)}`)
+      $.ui.log(`Stop 判斷失敗：${String(err)}`)
     }
     return out
   })
@@ -1558,7 +1560,7 @@ export const register: Register = on => {
     }
     if (myPending && !busy && !pendingToasted) {
       pendingToasted = true
-      $.ui.toast(`${tag} 有一份 handoff 沒送達，/handoff resend 重送`)
+      $.ui.toast(`有一份 handoff 沒送達，/handoff resend 重送`)
     }
     if (isSlash) return next(e)
 
@@ -1720,15 +1722,15 @@ async function resume($: EngineInterface) {
 ${handoff}`)
       .then(async failed => {
         if (!failed) return
-        $.ui.log(`${tag} /clear 或送出失敗：${failed.reason}`)
+        $.ui.log(`/clear 或送出失敗：${failed.reason}`)
         await recordFailure($, 'away', null, `${failed.stage} 失敗：${failed.reason}`, sid)
         // 還在舊對話：放回離席 handoff（連同攔下的訊息），可以再 /handoff resume 或 continue
         if (failed.stage === 'clear') {
           await $.store.set(key, away)
-          $.ui.toast(`${tag} /clear 失敗，離席 handoff 已保留，可以再 /handoff resume`)
+          $.ui.toast(`/clear 失敗，離席 handoff 已保留，可以再 /handoff resume`)
         }
       })
-      .catch(err => $.ui.log(`${tag} /clear 或送出失敗：${String(err)}`))
+      .catch(err => $.ui.log(`/clear 或送出失敗：${String(err)}`))
       .finally(() => { busy = false })
   })
   return { text: `${tag} 即將 /clear 並送出離席 handoff` }
@@ -1756,7 +1758,7 @@ ${lastHandoff.text}`
         if (key !== undefined) await $.store.delete(key)
         myPending = undefined
       })
-      .catch(err => $.ui.log(`${tag} 重送失敗：${String(err)}`))
+      .catch(err => $.ui.log(`重送失敗：${String(err)}`))
   })
   return { text: `${tag} 正在重新送出 handoff（不 /clear）` }
 }
@@ -1768,6 +1770,6 @@ async function keepOld($: EngineInterface) {
   await $.store.delete(key)
   const msg = away.held
   if (msg === undefined) return { text: `${tag} 已捨棄離席 handoff，繼續舊對話` }
-  $.clock.after(0, () => void submitText($, msg).catch(err => $.ui.log(`${tag} 送出被攔下的訊息失敗：${String(err)}`)))
+  $.clock.after(0, () => void submitText($, msg).catch(err => $.ui.log(`送出被攔下的訊息失敗：${String(err)}`)))
   return { text: `${tag} 已捨棄離席 handoff，在舊對話送出剛才的訊息` }
 }

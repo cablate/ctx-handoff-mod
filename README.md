@@ -76,7 +76,7 @@ After about 55 idle minutes it sends a tiny request to keep the conversation cac
 
 What you correct or explain becomes notes for this project, loaded into each new conversation.
 
-**When it updates:** every 30 messages, after 55 idle minutes, before a handoff, or on `/handoff distill`. The status line shows `整理 12/30` (messages so far) and `整理中` while updating. Conversations under 30k tokens are skipped.
+**When it updates:** every 30 messages, after 55 idle minutes, before a handoff, or on `/handoff distill`. The status line counts down to the next update ("再 18 則整理筆記", 18 messages to go) and says "正在整理筆記…" while updating. Conversations under 30k tokens are skipped.
 
 - **Memories:** preferences, corrections, facts and locations. Preferences and corrections load in full (only if they match something you said); facts and locations load as titles, and Claude reads the rest when needed. Facts and locations unconfirmed for 30 days are archived: not loaded, not deleted.
 - **Rules:** recurring practices, e.g. "Use forward slashes in Bash paths (3 times)". Loaded once seen twice, up to 15.
