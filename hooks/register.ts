@@ -3,7 +3,7 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 import type { PanelData, PanelUi } from '../types'
 import { panelTree } from './panel'
 import type { PanelActions } from './panel'
-import { isChinese, setLang, t } from './i18n'
+import { pickLang, setLang, t } from './i18n'
 import type { Lang } from './i18n'
 
 const tag = '[ctx-handoff]'
@@ -31,8 +31,8 @@ const DISTILL_MAX_TOKENS = 32_000
 const TRANSCRIPT_MAX_CHARS = 300_000
 const TOOL_INPUT_CHARS = 300
 const TOOL_RESULT_CHARS = 500
-// 介面語言（狀態列、toast、紀錄、指令回覆、面板）：auto 依序看 Claude Code 的 language 設定、
-// LC_ALL／LC_MESSAGES／LANG、系統語系，zh 開頭用繁體中文，其餘英文；也可以直接指定。給模型的提示與經驗檔格式不受影響
+// 介面語言（狀態列、toast、紀錄、指令回覆、面板）：auto 先看 Claude Code 的 language 設定，沒設就看系統語系，
+// zh 開頭用繁體中文，其餘英文；也可以直接指定。給模型的提示與經驗檔格式不受影響
 const UI_LANG: 'auto' | Lang = 'auto'
 
 const HANDOFF_PROMPT = [
@@ -1078,18 +1078,11 @@ const initLang = ($: EngineInterface) => (langReady ??= detectLang($).then(setLa
 
 async function detectLang($: EngineInterface): Promise<Lang> {
   if (UI_LANG !== 'auto') return UI_LANG
-  try {
-    const setting = (await $.settings.read()).language
-    if (typeof setting === 'string' && setting.trim()) return isChinese(setting) ? 'zh-TW' : 'en'
-  } catch {}
-  const vars = [await $.env.get('LC_ALL'), await $.env.get('LC_MESSAGES'), await $.env.get('LANG')]
-  // C／POSIX 不是使用者選的語言，當成沒設
-  const env = vars.find(v => v && !/^(C|POSIX)(\.|$)/.test(v))
-  let locale = env
-  if (!locale) {
-    try { locale = Intl.DateTimeFormat().resolvedOptions().locale } catch {}
-  }
-  return locale && isChinese(locale) ? 'zh-TW' : 'en'
+  let setting: unknown
+  try { setting = (await $.settings.read()).language } catch {}
+  let locale: string | undefined
+  try { locale = Intl.DateTimeFormat().resolvedOptions().locale } catch {}
+  return pickLang(setting, locale)
 }
 
 // 每個 session 一把的鍵（值不改寫）：第一次看到的時間記在 seen，超過 30 天的刪掉

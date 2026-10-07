@@ -31,7 +31,7 @@ ctx-handoff 在背景處理這些事，平常不需要打任何指令：
 - 用 API key、Bedrock 或 Vertex 的人：對話快取只保留 5 分鐘，「離開時保持快取」這項功能幫不上忙，需要關掉（見[限制](#限制)）。其他功能照常可用。
 - 希望筆記跨專案共用的人：筆記依專案資料夾分開存。
 
-**目前狀態**：實驗性。它使用 Claude Code 還在測試中的 mod 功能，Claude Code 更新後可能需要跟著調整。介面訊息是繁體中文。
+**目前狀態**：實驗性。它使用 Claude Code 還在測試中的 mod 功能，Claude Code 更新後可能需要跟著調整。系統語系（或 Claude Code 的 `language` 設定）是中文時，介面訊息用繁體中文，其他情況用英文。專案筆記的內容一律是繁體中文。
 
 ## 快速開始
 
@@ -132,6 +132,7 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 | `MAX_REFRESH` | `3` | 最多保持幾次，之後改存交接摘要 |
 | `MIN_TOKENS` | `30_000` | 對話小於這個值時，不保持快取、不整理筆記 |
 | `DISTILL_MODEL` | `claude-sonnet-5-5` | 整理筆記用的模型 |
+| `UI_LANG` | `'auto'` | 介面語言：`'auto'`、`'en'` 或 `'zh-TW'` |
 
 **門檻怎麼選**：一般經驗是模型品質在 200k～300k token 左右開始下滑。預設 600k 是為了少交接幾次；如果你發現交接前模型已經開始變差，就調低它。
 
@@ -163,6 +164,7 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 | `$.fs.read`、`$.fs.write` | 讀寫筆記檔與備份 |
 | `$.prompt.submit`、`$.command.run` | 把摘要送進新對話；執行 `/clear` |
 | `$.env.get`（`CLAUDE_CONFIG_DIR`、`HOME`、`USERPROFILE`） | 找到你的 `~/.claude` 資料夾 |
+| `$.settings.read` | 讀 Claude Code 的 `language` 設定，決定介面語言 |
 
 它自己不發網路請求，也不啟動其他程式（沒有 `$.http` 或 `$.process` 呼叫）。想在不載入它或任何 mod 的情況下開 session，用 `claude --safe-mode` 啟動。另見 [`SECURITY.md`](SECURITY.md)。
 

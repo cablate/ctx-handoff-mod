@@ -12,6 +12,13 @@ export const t = (): Messages => MSG[current]
 // 設定值或語系字串是不是中文（zh、zh_TW.UTF-8、繁體中文、Traditional Chinese…）
 export const isChinese = (s: string) => /^zh|chinese|中文|繁體|繁体|台灣|taiwan/i.test(s.trim())
 
+// 選介面語言：Claude Code 的 language 設定（使用者明確選的）優先，沒設就看系統語系。
+// 系統語系在 Linux／macOS 跟著 LANG，在 Windows 是作業系統的顯示語言；Git Bash 的 LANG 常是 en_US，不能拿來判斷
+export const pickLang = (setting: unknown, systemLocale: string | undefined): Lang => {
+  if (typeof setting === 'string' && setting.trim()) return isChinese(setting) ? 'zh-TW' : 'en'
+  return systemLocale && isChinese(systemLocale) ? 'zh-TW' : 'en'
+}
+
 const s = (n: number) => (n === 1 ? '' : 's')
 
 const zh = {

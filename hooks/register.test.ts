@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
+import { pickLang } from './i18n'
 import type { Engine } from 'claude-code/testing'
 
 const usage = (tokens: number) =>
@@ -44,8 +45,8 @@ let curCwd = 'C:/proj'
 
 // 引擎底下的世界：用量、fork、/clear、送出、檔案，全部記下來
 const world = (on: On, tokens: number, window = 1_000_000, store: Record<string, unknown> = {}, agents: { id: string; status: string }[] = [], turns: number | (() => number) = 0,
-  // 介面語言由這裡的環境變數決定；測試預設釘在繁體中文，不看執行測試那台機器的語系
-  env: Record<string, string> = { LANG: 'zh_TW.UTF-8' }) => {
+  // 介面語言由 Claude Code 的 language 設定決定；測試預設釘在繁體中文，不看執行測試那台機器的系統語系
+  language: unknown = '繁體中文') => {
   const turnsOf = typeof turns === 'function' ? turns : () => turns
   const forks: string[] = []
   const completes: { model: string; effort?: string; system?: string; prompt: string; timeoutMs?: number }[] = []
@@ -86,7 +87,8 @@ const world = (on: On, tokens: number, window = 1_000_000, store: Record<string,
   on('store.keys', () => ({ value: [...kv.keys()] }))
   const get = (key: string) => kv.get(key)
   const put = (key: string, value: unknown) => { kv.set(key, value) }
-  mock.env(on, { USERPROFILE: 'C:\\Users\\u', ...env })
+  mock.env(on, { USERPROFILE: 'C:\\Users\\u' })
+  on('settings.read', () => ({ value: { language } }) as never)
   on('session.id', () => ({ value: curSid }))
   on('session.turns', () => ({ value: turnsOf() }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { tokens, window }, rateLimits: [] } }))
@@ -1761,7 +1763,7 @@ test('記憶的根據：模型自己在開頭寫的日期去掉，只留程式�
 })
 
 // ---------- 介面語言：繁體中文與英文 ----------
-const EN = { LANG: 'en_US.UTF-8' }
+const EN = 'English'
 const HAS_CJK = /[\u3400-\u9fff\uff00-\uffef]/
 
 test('英文：狀態列、紀錄與 toast 沒有 [ctx-handoff] 前綴', async ($, on) => {
@@ -1828,25 +1830,30 @@ test('英文：面板與守門清單', async ($, on) => {
   expect((await cmd($, 'guard')).text).toContain('[draft · block]')
 })
 
-// 語言的判斷順序：LC_ALL、LC_MESSAGES、LANG；C／POSIX 不算；Claude Code 的 language 設定優先
-const LANG_CASES: { name: string; env: Record<string, string>; setting?: unknown; want: 'zh' | 'en' }[] = [
-  { name: 'LANG zh_TW', env: { LANG: 'zh_TW.UTF-8' }, want: 'zh' },
-  { name: 'LANG zh_CN', env: { LANG: 'zh_CN.UTF-8' }, want: 'zh' },
-  { name: 'LANG en_US', env: { LANG: 'en_US.UTF-8' }, want: 'en' },
-  { name: 'LANG ja_JP', env: { LANG: 'ja_JP.UTF-8' }, want: 'en' },
-  { name: 'LC_ALL 蓋過 LANG', env: { LC_ALL: 'en_US.UTF-8', LANG: 'zh_TW.UTF-8' }, want: 'en' },
-  { name: 'LC_MESSAGES 蓋過 LANG', env: { LC_MESSAGES: 'zh_TW.UTF-8', LANG: 'en_US.UTF-8' }, want: 'zh' },
-  { name: 'LC_ALL=C 當成沒設', env: { LC_ALL: 'C', LANG: 'zh_TW.UTF-8' }, want: 'zh' },
-  { name: 'language 設定是中文', env: { LANG: 'en_US.UTF-8' }, setting: 'Traditional Chinese', want: 'zh' },
-  { name: 'language 設定是繁體中文', env: { LANG: 'en_US.UTF-8' }, setting: '繁體中文', want: 'zh' },
-  { name: 'language 設定是日文', env: { LANG: 'zh_TW.UTF-8' }, setting: 'japanese', want: 'en' },
-  { name: 'language 設定空白：看環境變數', env: { LANG: 'zh_TW.UTF-8' }, setting: '  ', want: 'zh' },
+// 語言的判斷：language 設定優先（空白當成沒設），沒設就看系統語系；系統語系在測試裡假造不了，所以直接測 pickLang
+const PICK_CASES: { name: string; setting: unknown; locale: string | undefined; want: 'zh-TW' | 'en' }[] = [
+  { name: '系統語系 zh-TW', setting: undefined, locale: 'zh-TW', want: 'zh-TW' },
+  { name: '系統語系 zh-Hant-TW', setting: undefined, locale: 'zh-Hant-TW', want: 'zh-TW' },
+  { name: '系統語系 zh-CN', setting: undefined, locale: 'zh-CN', want: 'zh-TW' },
+  { name: '系統語系 en-US', setting: undefined, locale: 'en-US', want: 'en' },
+  { name: '系統語系 ja-JP', setting: undefined, locale: 'ja-JP', want: 'en' },
+  { name: '讀不到系統語系', setting: undefined, locale: undefined, want: 'en' },
+  { name: 'language 設定是中文、系統英文', setting: 'Traditional Chinese', locale: 'en-US', want: 'zh-TW' },
+  { name: 'language 設定是繁體中文', setting: '繁體中文', locale: 'en-US', want: 'zh-TW' },
+  { name: 'language 設定是日文、系統中文', setting: 'japanese', locale: 'zh-TW', want: 'en' },
+  { name: 'language 設定空白：看系統語系', setting: '  ', locale: 'zh-TW', want: 'zh-TW' },
 ]
-for (const c of LANG_CASES) {
-  test(`語言判斷：${c.name} → ${c.want}`, async ($, on) => {
-    const w = world(on, 100_000, 1_000_000, {}, [], 5, c.env)
-    if (c.setting !== undefined) on('settings.read', () => ({ value: { language: c.setting } }) as never)
+for (const c of PICK_CASES) {
+  test(`語言判斷：${c.name} → ${c.want}`, async () => {
+    expect(pickLang(c.setting, c.locale)).toBe(c.want)
+  })
+}
+
+// 經由 plugin：language 設定決定狀態列的語言
+for (const [language, want] of [['繁體中文', '再 25 則整理筆記'], ['English', '25 more messages until notes update']] as const) {
+  test(`語言判斷經由 plugin：language=${language}`, async ($, on) => {
+    const w = world(on, 100_000, 1_000_000, {}, [], 5, language)
     await endTurn($)
-    expect(w.statuses.at(-1)).toBe(c.want === 'zh' ? '再 25 則整理筆記' : '25 more messages until notes update')
+    expect(w.statuses.at(-1)).toBe(want)
   })
 }

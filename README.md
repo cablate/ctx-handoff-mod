@@ -33,7 +33,7 @@ ctx-handoff handles these in the background. In normal use you type no commands.
 - API-key, Bedrock or Vertex users: the conversation cache lasts only 5 minutes, so keeping it warm doesn't help and should be turned off (see [Limitations](#limitations)). Everything else works.
 - Anyone who wants notes shared across projects: notes are kept per project folder.
 
-**Status:** experimental. It uses Claude Code's mod feature, which is still in early access, so a Claude Code update may require changes. Its messages are in Traditional Chinese.
+**Status:** experimental. It uses Claude Code's mod feature, which is still in early access, so a Claude Code update may require changes. Messages are in English, or Traditional Chinese when your system language (or Claude Code's `language` setting) is Chinese. Project notes are always written in Traditional Chinese.
 
 ## Quick start
 
@@ -134,6 +134,7 @@ Settings are constants at the top of [`hooks/register.ts`](hooks/register.ts). I
 | `MAX_REFRESH` | `3` | How many times, before saving a handoff instead |
 | `MIN_TOKENS` | `30_000` | Below this, skip cache keeping and notes |
 | `DISTILL_MODEL` | `claude-sonnet-5-5` | Model used for project notes |
+| `UI_LANG` | `'auto'` | Message language: `'auto'`, `'en'` or `'zh-TW'` |
 
 **Choosing a threshold:** quality is commonly seen to start slipping around 200k–300k tokens. The 600k default trades that for fewer handoffs; lower it if the model gets worse before the handoff fires.
 
@@ -165,6 +166,7 @@ Settings are constants at the top of [`hooks/register.ts`](hooks/register.ts). I
 | `$.fs.read`, `$.fs.write` | Reads and writes the notes file and its backups |
 | `$.prompt.submit`, `$.command.run` | Sends the summary into the new conversation; runs `/clear` |
 | `$.env.get` (`CLAUDE_CONFIG_DIR`, `HOME`, `USERPROFILE`) | Finds your `~/.claude` folder |
+| `$.settings.read` | Reads Claude Code's `language` setting to pick the message language |
 
 It makes no network requests of its own and starts no programs (no `$.http` or `$.process` calls). To run a session without it, or any other mod, start Claude Code with `claude --safe-mode`. See also [`SECURITY.md`](SECURITY.md).
 
