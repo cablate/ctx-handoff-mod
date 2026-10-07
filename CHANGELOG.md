@@ -7,7 +7,8 @@ Notable changes to ctx-handoff. Versions follow the `version` in `.claude-plugin
 ### Changed
 
 - Code checks add Biome lint (`biome.json`, run by `tools/check.mjs` and CI through `npx`, no npm dependency).
-- The permissions table names the three environment variables read and says nothing needs to be set.
+- The permissions table names the three environment variables read, and now explains every hook and call that `claude plugin validate` lists.
+- The English README shows the status line in English.
 
 ## 0.4.0 – 2026-10-07
 

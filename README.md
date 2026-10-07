@@ -87,7 +87,7 @@ After about 55 idle minutes it sends a tiny request to keep the conversation cac
 
 What you correct or explain becomes notes for this project, loaded into each new conversation.
 
-**When it updates:** every 30 messages, after 55 idle minutes, before a handoff, or on `/handoff distill`. The status line counts down to the next update ("再 18 則整理筆記", 18 messages to go) and says "正在整理筆記…" while updating. Conversations under 30k tokens are skipped.
+**When it updates:** every 30 messages, after 55 idle minutes, before a handoff, or on `/handoff distill`. The status line counts down to the next update ("18 more messages until notes update") and says "Updating notes…" while updating. Conversations under 30k tokens are skipped.
 
 - **Memories:** preferences, corrections, facts and locations. Preferences and corrections load in full (only if they match something you said); facts and locations load as titles, and Claude reads the rest when needed. Facts and locations unconfirmed for 30 days are archived: not loaded, not deleted.
 - **Rules:** recurring practices, e.g. "Use forward slashes in Bash paths (3 times)". Loaded once seen twice, up to 15.
@@ -175,11 +175,12 @@ Values outside the allowed range are pulled back into it. Cache keeping and proj
 | `tool.call` | Applies guards you approved; does nothing until you approve one |
 | `prompt.submit`, `prompt.context` | Holds your message during a handoff; loads project notes into a new conversation |
 | `$.session.messages`, `$.model.complete`, `$.model.fork` | Reads the conversation to write notes and handoff summaries |
-| `$.fs.read`, `$.fs.write` | Reads and writes the notes file and its backups |
+| `$.fs.read`, `$.fs.write`, `$.fs.exists` | Reads and writes the notes file and its backups; checks whether the project is a git repo |
 | `$.prompt.submit`, `$.command.run` | Sends the summary into the new conversation; runs `/clear` |
 | `$.env.get` | Reads three environment variables, `CLAUDE_CONFIG_DIR`, `HOME` and `USERPROFILE`, only to find your `~/.claude` folder. Nothing needs to be set |
 | `$.tool.register` | Gives Claude one tool, `mark_in_project`, to report where it put a rule in your repo |
-| `$.settings.read` | Reads Claude Code's `language` setting and this plugin's own settings (`pluginConfigs`) |
+| `$.settings.read`, `$.config.list`, `config.set` | Reads Claude Code's `language` setting and this plugin's own settings (`pluginConfigs`); rereads them when you change one |
+| The rest: `session.start`, `turn.complete`, `classic.Stop`, `command.run`, `$.command.register`, `ui.render`, `$.store`, `$.state`, `$.clock`, `$.ui`, `$.agent.list`, `$.session.*` | Bookkeeping: timers, the `/handoff` command, status line, panel and toasts, its own storage, and checking that Claude and its subagents are done before a handoff |
 
 It makes no network requests of its own and starts no programs (no `$.http` or `$.process` calls). To run a session without it, or any other mod, start Claude Code with `claude --safe-mode`. See also [`SECURITY.md`](SECURITY.md).
 

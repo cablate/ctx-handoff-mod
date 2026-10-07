@@ -173,11 +173,12 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 | `tool.call` | 套用你核准的守門；沒有核准任何守門時什麼都不做 |
 | `prompt.submit`、`prompt.context` | 交接中暫存你的訊息；把專案筆記帶入新對話 |
 | `$.session.messages`、`$.model.complete`、`$.model.fork` | 讀對話來寫筆記與交接摘要 |
-| `$.fs.read`、`$.fs.write` | 讀寫筆記檔與備份 |
+| `$.fs.read`、`$.fs.write`、`$.fs.exists` | 讀寫筆記檔與備份；確認專案是不是 git repo |
 | `$.prompt.submit`、`$.command.run` | 把摘要送進新對話；執行 `/clear` |
 | `$.env.get` | 讀三個環境變數 `CLAUDE_CONFIG_DIR`、`HOME`、`USERPROFILE`，只用來找到你的 `~/.claude` 資料夾，不需要另外設定 |
 | `$.tool.register` | 給 Claude 一個工具 `mark_in_project`，用來回報規則放進 repo 的哪裡 |
-| `$.settings.read` | 讀 Claude Code 的 `language` 設定，決定介面語言 |
+| `$.settings.read`、`$.config.list`、`config.set` | 讀 Claude Code 的 `language` 設定與這個 plugin 自己的設定（`pluginConfigs`）；你改設定時重新讀取 |
+| 其餘：`session.start`、`turn.complete`、`classic.Stop`、`command.run`、`$.command.register`、`ui.render`、`$.store`、`$.state`、`$.clock`、`$.ui`、`$.agent.list`、`$.session.*` | 日常運作：計時、`/handoff` 指令、狀態列、面板與提示、自己的儲存空間，以及交接前確認 Claude 和子代理都做完了 |
 
 它自己不發網路請求，也不啟動其他程式（沒有 `$.http` 或 `$.process` 呼叫）。想在不載入它或任何 mod 的情況下開 session，用 `claude --safe-mode` 啟動。另見 [`SECURITY.md`](SECURITY.md)。
 
