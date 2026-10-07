@@ -2,7 +2,7 @@
 
 Notable changes to ctx-handoff. Versions follow the `version` in `.claude-plugin/plugin.json`.
 
-## Unreleased
+## 0.4.0 – 2026-10-07
 
 ### Added
 

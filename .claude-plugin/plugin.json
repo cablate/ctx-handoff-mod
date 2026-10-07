@@ -1,6 +1,6 @@
 {
   "name": "ctx-handoff",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Hands off to a fresh conversation when context fills up, keeps the cache warm while you're away, and turns what you teach Claude into project notes",
   "author": {
     "name": "CabLate",
