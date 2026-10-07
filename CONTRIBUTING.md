@@ -12,6 +12,13 @@ You need Node 22 and a Claude Code build with mods.
 4. Run `node tools/check.mjs` (plugin validate, plugin test, `tsc`, tool tests). It must pass.
 5. If the change is visible to users, update both `README.md` and `README.zh-TW.md`, and add a line to `CHANGELOG.md` under Unreleased.
 
+## Code style
+
+- TypeScript, ES modules, 2-space indent, single quotes, no semicolons. `.editorconfig` sets the basics for your editor.
+- `tsc` in strict mode is the check (run by `node tools/check.mjs`). There's no separate linter, so the repo stays free of npm dependencies.
+- Code comments and `CLAUDE.md` are in Traditional Chinese, the maintainer's language. English comments are welcome in your changes.
+- Messages people see live in `hooks/i18n.ts`, in both English and Traditional Chinese; add both when you add one. Don't prefix them with `[ctx-handoff]` (Claude Code adds the mod name).
+
 ## Releasing
 
 Marketplace installs only update when `version` in `.claude-plugin/plugin.json` changes, so every release:
@@ -27,4 +34,3 @@ Never change the plugin `name` (`ctx-handoff`) or the marketplace `name` (`ctx-h
 - [`CLAUDE.md`](CLAUDE.md): design decisions, platform behavior that was measured, and limits of the test engine. It's written in Traditional Chinese for the maintainer and AI assistants; read it before changing how handoff, notes or the panel work.
 - [`tools/README.md`](tools/README.md): the development scripts.
 
-User-facing messages are currently in Traditional Chinese. Keep new ones short and plain, and don't prefix them with `[ctx-handoff]` (Claude Code adds the mod name).

@@ -12,6 +12,11 @@ Notable changes to ctx-handoff. Versions follow the `version` in `.claude-plugin
 
 - **Settings no longer live in the code:** threshold, idle time, keep-warm count, smallest conversation, notes model and language are plugin settings (`/plugin configure`, or `pluginConfigs` in `settings.json`), kept across updates. Editing `hooks/register.ts` is no longer needed.
 - Removed the "cache keeping isn't confirmed" limitation: real sessions show the 2nd and 3rd refreshes (110 and 165 minutes idle) reading the whole conversation from cache.
+- The code is split into smaller files, and `CONTRIBUTING.md` describes the code style; `.editorconfig` added.
+
+### Fixed
+
+- The tool Claude uses to report a rule moved into the repo stays available after a session is resumed or the mod reloads.
 
 ## 0.3.0 – 2026-10-07
 
