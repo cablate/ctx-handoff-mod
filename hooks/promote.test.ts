@@ -24,7 +24,7 @@ const promoteBlockOf = async ($: Engine) =>
   (await $.prompt.context({ blocks: [] })).blocks.find(b => b.name === 'ctxHandoffPromote')?.text
 const markInProject = ($: Engine, items: unknown[]) => $.tool.call({ tool: PROMOTE_TOOL_NAME, items } as never)
 
-// 2026-10-07 ie 專案：session 重開（resume）後回合數不是 0，舊程式就不註冊，引擎把工具撤掉，AI 只好直接改 store 檔
+// 2026-10-07 實際專案：session 重開（resume）後回合數不是 0，舊程式就不註冊，引擎把工具撤掉，AI 只好直接改 store 檔
 test('放進專案：已經有對話紀錄的 session（重開或熱重載）也照樣註冊工具並交代', async ($, on) => {
   const w = world(on, 100_000, 1_000_000, {}, [], 4)
   w.files.set(NOTES, PROMOTE_NOTES)
