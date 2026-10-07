@@ -1,4 +1,4 @@
-// 工具共用：Claude 設定目錄、經驗檔解析與帶入量估算（和 hooks/register.ts 的 parseNotes／contextText 同規則）
+// 工具共用：Claude 設定目錄、經驗檔解析與帶入量估算（和 hooks/notes.ts 的 parseNotes／contextText 同規則）
 import { homedir } from 'node:os'
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
