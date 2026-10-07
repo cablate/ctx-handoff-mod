@@ -37,21 +37,30 @@ ctx-handoff handles these in the background. In normal use you type no commands.
 
 ## Quick start
 
-Requires a Claude Code build with mods (function hooks). Tested on 2.1.287–2.1.289.
+Requires Claude Code 2.1.287 or later (mods are on by default from there). Tested up to 2.1.292.
 
 ```sh
-git clone https://github.com/cablate/ctx-handoff-mod ~/.claude/mods/ctx-handoff
-claude --plugin-dir ~/.claude/mods/ctx-handoff
+claude plugin marketplace add cablate/ctx-handoff-mod
+claude plugin install ctx-handoff@ctx-handoff-mod
 ```
 
-In that session, type `/handoff`. A status like this means it's installed:
+Start a new session and type `/handoff`. A status like this means it's installed:
 
 ```
 [ctx-handoff] context 12034 / 門檻 600000（視窗 1000000）
 快取刷新 on，本次閒置已刷新 0/3，計時器未啟動
 ```
 
-To load it in every session, add its absolute path to `env` in `~/.claude/settings.json` (separate several paths with `;` on Windows, `:` on macOS/Linux):
+**Updates** aren't automatic. Run `claude plugin update ctx-handoff@ctx-handoff-mod`, or turn on auto-update under **Marketplaces** in `/plugin`.
+
+**Try it or change it from a clone instead.** Settings live in the code (see [Settings](#settings)), and a marketplace install is overwritten on update, so clone it if you want to change them:
+
+```sh
+git clone https://github.com/cablate/ctx-handoff-mod ~/.claude/mods/ctx-handoff
+claude --plugin-dir ~/.claude/mods/ctx-handoff
+```
+
+To load a clone in every session, add its absolute path to `env` in `~/.claude/settings.json` (separate several paths with `;` on Windows, `:` on macOS/Linux):
 
 ```json
 "env": { "CLAUDE_CODE_PLUGIN_DIRS": "/home/you/.claude/mods/ctx-handoff" }
@@ -115,7 +124,7 @@ You won't need these in normal use. If `/handoff` is already taken by your own c
 
 ## Settings
 
-Settings are constants at the top of [`hooks/register.ts`](hooks/register.ts) and take effect when you save.
+Settings are constants at the top of [`hooks/register.ts`](hooks/register.ts). In a clone loaded with `--plugin-dir`, they take effect when you save.
 
 | Constant | Default | Meaning |
 |---|---|---|
@@ -128,7 +137,7 @@ Settings are constants at the top of [`hooks/register.ts`](hooks/register.ts) an
 
 **Choosing a threshold:** quality is commonly seen to start slipping around 200k–300k tokens. The 600k default trades that for fewer handoffs; lower it if the model gets worse before the handoff fires.
 
-## Cost and privacy
+## Cost, privacy and permissions
 
 **What it costs.** Everything runs on your own Claude Code sign-in and counts toward your usage like any other request:
 
@@ -146,22 +155,37 @@ Settings are constants at the top of [`hooks/register.ts`](hooks/register.ts) an
 | Backups of notes deleted from the panel | `.ctx-handoff-backup/` next to the notes file |
 | Recent handoff summaries, errors and settings | `~/.claude/plugins/store/ctx-handoff_*.json` |
 
+**What it's allowed to do.** Mods aren't sandboxed; this one runs with your permissions. Check what it uses without running it: `claude plugin validate <ctx-handoff folder>` prints a `hooks:` line (events it receives) and a `calls:` line (what its code calls). For ctx-handoff they mean:
+
+| In the output | Why |
+|---|---|
+| `tool.call` | Applies guards you approved; does nothing until you approve one |
+| `prompt.submit`, `prompt.context` | Holds your message during a handoff; loads project notes into a new conversation |
+| `$.session.messages`, `$.model.complete`, `$.model.fork` | Reads the conversation to write notes and handoff summaries |
+| `$.fs.read`, `$.fs.write` | Reads and writes the notes file and its backups |
+| `$.prompt.submit`, `$.command.run` | Sends the summary into the new conversation; runs `/clear` |
+| `$.env.get` (`CLAUDE_CONFIG_DIR`, `HOME`, `USERPROFILE`) | Finds your `~/.claude` folder |
+
+It makes no network requests of its own and starts no programs (no `$.http` or `$.process` calls). To run a session without it, or any other mod, start Claude Code with `claude --safe-mode`. See also [`SECURITY.md`](SECURITY.md).
+
 ## Troubleshooting
 
 Start with `/handoff`: it shows context use, which features are on, and the latest error from the background.
 
 | Symptom | What to check |
 |---|---|
-| `/handoff` isn't a command | The mod isn't loaded. Check your Claude Code version supports mods and the path is absolute. If you have your own `/handoff`, use `/ctx-handoff`. |
+| `/handoff` isn't a command | The mod isn't loaded. Run `claude plugin list` and check your Claude Code version; for a clone, check the path is absolute. If you have your own `/handoff`, use `/ctx-handoff`. |
+| Something odd and you suspect a mod | Start with `claude --safe-mode`, which loads no installed mods, and see whether it goes away. |
 | The new conversation didn't get the summary | Run `/handoff resend`. |
 | Notes never update | Conversations under 30k tokens are skipped. Run `/handoff distill` and look for an error in `/handoff`. |
 | A command gives no answer | Run `/handoff` for the latest error, then [open an issue](https://github.com/cablate/ctx-handoff-mod/issues/new/choose) with its output. |
 
 ## Uninstall
 
-1. Remove the path from `CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json` (or stop passing `--plugin-dir`).
-2. Delete the folder you cloned.
-3. Optional: delete the files in [What it stores locally](#cost-and-privacy). Project notes are plain Markdown, so you may want to keep them.
+1. Installed from the marketplace: run `claude plugin uninstall ctx-handoff@ctx-handoff-mod`. From a clone: remove the path from `CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json` (or stop passing `--plugin-dir`) and delete the folder.
+2. Optional: delete the files in [What it stores locally](#cost-privacy-and-permissions); uninstalling doesn't remove them. Project notes are plain Markdown, so you may want to keep them.
+
+To turn it off for a while instead, disable it in `/plugin`.
 
 ## Limitations
 

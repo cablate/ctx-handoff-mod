@@ -12,6 +12,16 @@ You need Node 22 and a Claude Code build with mods.
 4. Run `node tools/check.mjs` (plugin validate, plugin test, `tsc`, tool tests). It must pass.
 5. If the change is visible to users, update both `README.md` and `README.zh-TW.md`, and add a line to `CHANGELOG.md` under Unreleased.
 
+## Releasing
+
+Marketplace installs only update when `version` in `.claude-plugin/plugin.json` changes, so every release:
+
+1. Bump `version` in `plugin.json` (only there; the marketplace entry has none).
+2. Move the Unreleased notes in `CHANGELOG.md` under the new version and date.
+3. Push, then tag `ctx-handoff--v<version>` and publish a GitHub Release with the same notes.
+
+Never change the plugin `name` (`ctx-handoff`) or the marketplace `name` (`ctx-handoff-mod`): existing installs refer to them.
+
 ## Where to read first
 
 - [`CLAUDE.md`](CLAUDE.md): design decisions, platform behavior that was measured, and limits of the test engine. It's written in Traditional Chinese for the maintainer and AI assistants; read it before changing how handoff, notes or the panel work.

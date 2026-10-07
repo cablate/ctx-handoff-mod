@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 推送前一次跑完：plugin validate、plugin test、tsc、公開資訊掃描。只印每步一行摘要，失敗才印該步的尾端輸出。
+// 推送前一次跑完：plugin validate、plugin test、tsc、公開資訊掃描（檔案與 git 歷史）。只印每步一行摘要，失敗才印該步的尾端輸出。
 // 用法：node tools/check.mjs [mod 資料夾，預設本 repo] [--skip-tsc]
 // 公開資訊掃描另外讀 <git 共用目錄>/info/private-words（一行一個詞，不進版本控制），例如真名、私人網域。
 import { spawnSync, execFileSync } from 'node:child_process'
@@ -57,7 +57,7 @@ else if (!existsSync(join(dir, '.claude-plugin', 'types'))) {
   report('tsc', r.ok, `${n} 個錯誤`, r.out)
 }
 
-// 公開資訊：追蹤中的文字檔裡不該出現個人 Email、本機使用者路徑、private-words 裡的詞
+// 公開資訊：追蹤中的文字檔與 git 歷史裡不該出現個人 Email、本機使用者路徑、private-words 裡的詞
 {
   const common = execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd: dir, encoding: 'utf8' }).trim()
   const wordsFile = resolve(dir, common, 'info', 'private-words')
@@ -67,19 +67,39 @@ else if (!existsSync(join(dir, '.claude-plugin', 'types'))) {
   const okEmail = /@(users\.noreply\.github\.com|anthropic\.com|example\.(com|org))$/i
   // 測試用的假使用者 `u` 與 `<user>` 這類占位不算
   const homePath = /[A-Za-z]:[\\/]+Users[\\/]+(?!u(?![\w.-])|<)[^\\/\s'"`]+/i
+  const why = line => [
+    ...(line.match(email) ?? []).filter(m => !okEmail.test(m)).map(m => `Email ${m}`),
+    ...(homePath.test(line) ? ['本機使用者路徑'] : []),
+    ...words.filter(w => line.toLowerCase().includes(w.toLowerCase())).map(w => `private-words「${w}」`),
+  ]
   const hits = []
   for (const f of files) {
     const p = join(dir, f)
     if (!existsSync(p)) continue
     readFileSync(p, 'utf8').split('\n').forEach((line, i) => {
-      const why = [
-        ...(line.match(email) ?? []).filter(m => !okEmail.test(m)).map(m => `Email ${m}`),
-        ...(homePath.test(line) ? ['本機使用者路徑'] : []),
-        ...words.filter(w => line.toLowerCase().includes(w.toLowerCase())).map(w => `private-words「${w}」`),
-      ]
-      if (why.length) hits.push(`${f}:${i + 1} ${why.join('、')}`)
+      const w = why(line)
+      if (w.length) hits.push(`${f}:${i + 1} ${w.join('、')}`)
     })
   }
   report('public', hits.length === 0, hits.length ? `${hits.length} 處` : `${files.length} 個檔案乾淨（private-words ${words.length} 個）`, hits.join('\n'))
+
+  // git 歷史（所有分支的 commit 訊息、作者與新增的行）推上去就改不回來，同樣的規則也要擋
+  const log = execFileSync('git', ['log', '-p', '--all', '--no-color', '--format=@@commit %h %ae %ce%n%B'], { cwd: dir, encoding: 'utf8', maxBuffer: 512 * 1024 * 1024 })
+  const old = new Set()
+  let commit = ''
+  let commits = 0
+  for (const line of log.split('\n')) {
+    if (line.startsWith('@@commit ')) {
+      const [, h, ...mails] = line.split(' ')
+      commit = h
+      commits += 1
+      for (const m of mails) if (!okEmail.test(m)) old.add(`${commit} 作者 ${m}`)
+      continue
+    }
+    if (line.startsWith('-')) continue
+    const w = why(line)
+    if (w.length) old.add(`${commit} ${w.join('、')}`)
+  }
+  report('history', old.size === 0, old.size ? `${old.size} 處（已推送的要改寫歷史才能移除）` : `${commits} 個 commit 乾淨`, [...old].join('\n'))
 }
 process.exit(failed ? 1 : 0)

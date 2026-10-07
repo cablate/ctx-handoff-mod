@@ -35,21 +35,30 @@ ctx-handoff 在背景處理這些事，平常不需要打任何指令：
 
 ## 快速開始
 
-需要支援 mod（function hooks）的 Claude Code，已在 2.1.287～2.1.289 測試。
+需要 Claude Code 2.1.287 以上（從這版起 mod 預設開啟），已測試到 2.1.292。
 
 ```sh
-git clone https://github.com/cablate/ctx-handoff-mod ~/.claude/mods/ctx-handoff
-claude --plugin-dir ~/.claude/mods/ctx-handoff
+claude plugin marketplace add cablate/ctx-handoff-mod
+claude plugin install ctx-handoff@ctx-handoff-mod
 ```
 
-在開啟的 session 輸入 `/handoff`，看到類似下面的狀態就代表裝好了：
+開一個新 session 輸入 `/handoff`，看到類似下面的狀態就代表裝好了：
 
 ```
 [ctx-handoff] context 12034 / 門檻 600000（視窗 1000000）
 快取刷新 on，本次閒置已刷新 0/3，計時器未啟動
 ```
 
-想讓每個 session 都自動載入，在 `~/.claude/settings.json` 的 `env` 加上絕對路徑（Windows 多個路徑用 `;` 分隔，macOS／Linux 用 `:`）：
+**更新**不會自動進行。執行 `claude plugin update ctx-handoff@ctx-handoff-mod`，或在 `/plugin` 的 **Marketplaces** 開啟自動更新。
+
+**想試用或修改，改用 clone。** 設定寫在程式裡（見[調整設定](#調整設定)），從 marketplace 安裝的版本更新時會被覆蓋，要改設定就 clone 下來：
+
+```sh
+git clone https://github.com/cablate/ctx-handoff-mod ~/.claude/mods/ctx-handoff
+claude --plugin-dir ~/.claude/mods/ctx-handoff
+```
+
+想讓 clone 的版本在每個 session 都自動載入，在 `~/.claude/settings.json` 的 `env` 加上絕對路徑（Windows 多個路徑用 `;` 分隔，macOS／Linux 用 `:`）：
 
 ```json
 "env": { "CLAUDE_CODE_PLUGIN_DIRS": "/home/you/.claude/mods/ctx-handoff" }
@@ -113,7 +122,7 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 
 ## 調整設定
 
-設定是 [`hooks/register.ts`](hooks/register.ts) 開頭的常數，改完存檔就會生效。
+設定是 [`hooks/register.ts`](hooks/register.ts) 開頭的常數。用 `--plugin-dir` 載入的 clone，改完存檔就會生效。
 
 | 常數 | 預設 | 意思 |
 |---|---|---|
@@ -126,7 +135,7 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 
 **門檻怎麼選**：一般經驗是模型品質在 200k～300k token 左右開始下滑。預設 600k 是為了少交接幾次；如果你發現交接前模型已經開始變差，就調低它。
 
-## 費用與隱私
+## 費用、隱私與權限
 
 **會花多少。** 所有請求都用你自己的 Claude Code 登入，和其他請求一樣計入用量：
 
@@ -144,22 +153,37 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 | 從面板刪除的筆記備份 | 筆記檔旁邊的 `.ctx-handoff-backup/` |
 | 最近的交接摘要、錯誤紀錄與設定 | `~/.claude/plugins/store/ctx-handoff_*.json` |
 
+**它能做哪些事。** mod 沒有沙箱，這個 mod 用你的權限執行。不用執行就能檢查它用了什麼：`claude plugin validate <ctx-handoff 資料夾>` 會印出 `hooks:`（它接收的事件）與 `calls:`（程式呼叫了什麼）兩行。對 ctx-handoff 來說：
+
+| 輸出裡的項目 | 用途 |
+|---|---|
+| `tool.call` | 套用你核准的守門；沒有核准任何守門時什麼都不做 |
+| `prompt.submit`、`prompt.context` | 交接中暫存你的訊息；把專案筆記帶入新對話 |
+| `$.session.messages`、`$.model.complete`、`$.model.fork` | 讀對話來寫筆記與交接摘要 |
+| `$.fs.read`、`$.fs.write` | 讀寫筆記檔與備份 |
+| `$.prompt.submit`、`$.command.run` | 把摘要送進新對話；執行 `/clear` |
+| `$.env.get`（`CLAUDE_CONFIG_DIR`、`HOME`、`USERPROFILE`） | 找到你的 `~/.claude` 資料夾 |
+
+它自己不發網路請求，也不啟動其他程式（沒有 `$.http` 或 `$.process` 呼叫）。想在不載入它或任何 mod 的情況下開 session，用 `claude --safe-mode` 啟動。另見 [`SECURITY.md`](SECURITY.md)。
+
 ## 疑難排解
 
 先輸入 `/handoff`：它會顯示 context 用量、各功能是否開啟，以及背景最近一次的錯誤。
 
 | 狀況 | 怎麼查 |
 |---|---|
-| 沒有 `/handoff` 指令 | mod 沒載入。確認 Claude Code 版本支援 mod、路徑是絕對路徑。如果你自己有 `/handoff`，改用 `/ctx-handoff`。 |
+| 沒有 `/handoff` 指令 | mod 沒載入。執行 `claude plugin list` 並確認 Claude Code 版本；clone 的版本要確認路徑是絕對路徑。如果你自己有 `/handoff`，改用 `/ctx-handoff`。 |
+| 行為怪怪的，懷疑是 mod 造成 | 用 `claude --safe-mode` 啟動（不載入任何已安裝的 mod），看問題是否消失。 |
 | 新對話沒收到交接摘要 | 執行 `/handoff resend`。 |
 | 筆記一直沒更新 | 小於 30k token 的對話會跳過。執行 `/handoff distill`，再用 `/handoff` 看有沒有錯誤。 |
 | 指令沒有回應 | 用 `/handoff` 看最近的錯誤，附上輸出[開一個 issue](https://github.com/cablate/ctx-handoff-mod/issues/new/choose)。 |
 
 ## 移除
 
-1. 從 `~/.claude/settings.json` 的 `CLAUDE_CODE_PLUGIN_DIRS` 拿掉路徑（或不再加 `--plugin-dir`）。
-2. 刪掉 clone 下來的資料夾。
-3. 可選：刪除[存在本機的檔案](#費用與隱私)。專案筆記是一般的 Markdown，也可以留著自己用。
+1. 從 marketplace 安裝的：執行 `claude plugin uninstall ctx-handoff@ctx-handoff-mod`。用 clone 的：從 `~/.claude/settings.json` 的 `CLAUDE_CODE_PLUGIN_DIRS` 拿掉路徑（或不再加 `--plugin-dir`），再刪掉資料夾。
+2. 可選：刪除[存在本機的檔案](#費用隱私與權限)，解除安裝不會刪掉它們。專案筆記是一般的 Markdown，也可以留著自己用。
+
+只想暫時關掉，在 `/plugin` 停用就好。
 
 ## 限制
 
