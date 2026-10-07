@@ -128,21 +128,25 @@ You won't need these in normal use. If `/handoff` is already taken by your own c
 
 ## Settings
 
-Change them in `/config` (search for ctx-handoff) or with `/plugin configure ctx-handoff@ctx-handoff-mod`. They're saved in your own `settings.json`, so updates keep them, and they apply right away.
+Set them with `/plugin configure ctx-handoff@ctx-handoff-mod`, or add them to `~/.claude/settings.json` yourself (also the way to set them for a clone). They're saved in your own settings, so updates keep them; they apply from the next session.
+
+```json
+"pluginConfigs": { "ctx-handoff@ctx-handoff-mod": { "options": { "threshold": 400000, "idle_minutes": 50 } } }
+```
+
+For a clone, use the key `ctx-handoff@inline` instead.
 
 | Setting | Default | Meaning |
 |---|---|---|
 | `threshold` | `600000` | Context tokens that trigger a handoff |
 | `window_ratio` | `0.8` | On smaller windows, the threshold is `window × ratio` |
-| `keep_cache_warm` | on | Keep the cache warm while you're away (same as `/handoff refresh on\|off`) |
 | `idle_minutes` | `55` | Idle minutes before each keep-warm request (5–59) |
 | `max_refresh` | `3` | Keep-warm requests per idle period, before saving a handoff instead |
 | `min_tokens` | `30000` | Below this, skip cache keeping, away handoffs and notes |
-| `project_notes` | on | Project notes (same as `/handoff distill on\|off`) |
 | `notes_model` | `claude-sonnet-5-5` | Model for project notes: Sonnet 5.5 or Opus 5.5 |
 | `language` | `auto` | Message language: `auto`, `en` or `zh-TW` |
 
-Values outside the allowed range are pulled back into it.
+Values outside the allowed range are pulled back into it. Cache keeping and project notes are switched with `/handoff refresh on|off` and `/handoff distill on|off`.
 
 **Choosing a threshold:** quality is commonly seen to start slipping around 200k–300k tokens. The 600k default trades that for fewer handoffs; lower it if the model gets worse before the handoff fires.
 

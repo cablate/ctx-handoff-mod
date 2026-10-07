@@ -33,12 +33,6 @@
       "min": 0.3,
       "max": 0.95
     },
-    "keep_cache_warm": {
-      "type": "boolean",
-      "title": "Keep the cache warm while away",
-      "description": "Send a tiny request before the 1-hour conversation cache expires. Turn off on a 5-minute cache (API key, Bedrock, Vertex).",
-      "default": true
-    },
     "idle_minutes": {
       "type": "number",
       "title": "Idle minutes before keeping the cache warm",
@@ -62,12 +56,6 @@
       "default": 30000,
       "min": 0,
       "max": 500000
-    },
-    "project_notes": {
-      "type": "boolean",
-      "title": "Project notes",
-      "description": "Turn what you correct or explain into notes for this project, loaded into new conversations.",
-      "default": true
     },
     "notes_model": {
       "type": "string",

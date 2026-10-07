@@ -46,6 +46,8 @@ let curCwd = 'C:/proj'
 let envVars: Record<string, string> = { USERPROFILE: 'C:\\Users\\u' }
 // /config 裡本 plugin 的欄位（ctx-handoff.<欄位>）；測試開始前可以先放值，模擬使用者設定過
 let configValues: Record<string, unknown> = {}
+// settings.json 的 pluginConfigs["ctx-handoff@…"].options（clone 載入或 claude -p 時只有這個來源）
+let pluginOptions: Record<string, unknown> = {}
 
 // 引擎底下的世界：用量、fork、/clear、送出、檔案，全部記下來
 const world = (on: On, tokens: number, window = 1_000_000, store: Record<string, unknown> = {}, agents: { id: string; status: string }[] = [], turns: number | (() => number) = 0,
@@ -79,11 +81,8 @@ const world = (on: On, tokens: number, window = 1_000_000, store: Record<string,
   curRoot = 'C:\\proj'
   curCwd = 'C:/proj'
   envVars = { USERPROFILE: 'C:\\Users\\u' }
-  // 開關放在 /config：沿用 store 寫法的測試（refresh／distill: false）轉成設定值
-  configValues = {
-    ...(store.refresh === false ? { 'ctx-handoff.keep_cache_warm': false } : {}),
-    ...(store.distill === false ? { 'ctx-handoff.project_notes': false } : {}),
-  }
+  configValues = {}
+  pluginOptions = {}
   const clock = mock.clock(on)
   on('ui.log', (_$, e: unknown) => { logs.push(JSON.stringify(e)); return { value: undefined } })
   const statuses: (string | undefined)[] = []
@@ -98,7 +97,7 @@ const world = (on: On, tokens: number, window = 1_000_000, store: Record<string,
   const get = (key: string) => kv.get(key)
   const put = (key: string, value: unknown) => { kv.set(key, value) }
   on('env.get', (_$, e: { name: string }) => ({ value: envVars[e.name] }))
-  on('settings.read', () => ({ value: { language } }) as never)
+  on('settings.read', () => ({ value: { language, pluginConfigs: { 'ctx-handoff@ctx-handoff-mod': { options: pluginOptions } } } }) as never)
   on('config.list', () => ({ value: Object.entries(configValues).map(([key, value]) => ({ key, value, label: key, kind: typeof value === 'boolean' ? 'boolean' : typeof value === 'number' ? 'number' : 'text', provider: { plugin: 'ctx-handoff', tier: 'user' }, isLocked: false })) }) as never)
   on('config.set', (_$, e: { key: string; value: unknown }) => { configValues[e.key] = e.value; return { value: e.value } as never })
   on('session.id', () => ({ value: curSid }))
@@ -2051,15 +2050,20 @@ test('設定：超出範圍的值拉回範圍內（門檻最低 50000）', async
   expect((await cmd($, '')).text).toContain('context 100000 / 門檻 50000')
 })
 
-test('設定：/handoff refresh off 與 distill off 寫進 /config，不再寫 store', async ($, on) => {
-  const w = world(on, 100_000, 1_000_000, {}, [], 5)
-  await startSession($)
-  expect((await cmd($, 'refresh off')).text).toContain('快取刷新已設為 off（閒置 55 分鐘')
-  expect(configValues['ctx-handoff.keep_cache_warm']).toBe(false)
-  expect(w.get('refresh')).toBeUndefined()
-  await cmd($, 'distill off')
-  expect(configValues['ctx-handoff.project_notes']).toBe(false)
-  expect((await cmd($, '')).text).toContain('快取刷新 off')
+// 2026-10-07 實測：clone 載入（--plugin-dir、CLAUDE_CODE_PLUGIN_DIRS）或 claude -p 時，/config 清單沒有本 plugin 的列，
+// 值只在 settings.json 的 pluginConfigs；只讀清單的版本在那裡完全吃不到設定
+test('設定：/config 清單沒有本 plugin 的列時，讀 settings.json 的 pluginConfigs', async ($, on) => {
+  world(on, 100_000, 1_000_000, {}, [], 5)
+  pluginOptions = { threshold: 200_000, idle_minutes: 30 }
+  const text = (await cmd($, '')).text
+  expect(text).toContain('context 100000 / 門檻 200000')
+  expect(text).toContain('閒置 30 分')
+})
+
+test('設定：關閉保持快取的訊息照設定的閒置分鐘數', async ($, on) => {
+  world(on, 100_000, 1_000_000, {}, [], 5)
+  pluginOptions = { idle_minutes: 20 }
+  expect((await cmd($, 'refresh off')).text).toContain('快取刷新已設為 off（閒置 20 分鐘')
 })
 
 test('設定：使用者在 /config 改語言，介面文字跟著換', async ($, on) => {
