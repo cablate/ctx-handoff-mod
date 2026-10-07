@@ -139,6 +139,12 @@ const zh = {
     status: (retry: string, done: string) => `防呆提醒：重複失敗 ${retry}，完成前驗證 ${done}`,
   },
 
+  // 進度備忘
+  progress: {
+    status: (at: string, task: string, state: string, hintOff: boolean) => `最近進度：${at}・${task}（${state}）${hintOff ? '・新對話不提示（resume_hint 已關）' : ''}`,
+    states: { done: '完成', in_progress: '進行中', blocked: '卡住' } as Record<string, string>,
+  },
+
   // session 啟動
   start: {
     description: 'ctx-handoff: 狀態；now／dry／distill／resume／continue／resend／refresh on|off／distill on|off',
@@ -241,6 +247,10 @@ const zh = {
     badJson: (msg: string) => `JSON 格式錯誤（${msg}）`,
     notObject: '不是 JSON 物件',
     secret: '疑似金鑰',
+    badState: (v: string) => `state 無效（${v}）`,
+    badFiles: 'files 不是清單',
+    tooMany: (k: string, max: number) => `${k} 超過 ${max} 個`,
+    overTotal: (max: number) => `進度整份超過 ${max} 字`,
     noRecord: '（內容不記錄）',
     sample: (why: string, line: string) => `${why}：${line}`,
   },
@@ -447,6 +457,11 @@ const en: Messages = {
     status: (retry, done) => `Nudges: repeated failure ${retry}, verify before done ${done}`,
   },
 
+  progress: {
+    status: (at, task, state, hintOff) => `Latest progress: ${at}, ${task} (${state})${hintOff ? ', not offered to new chats (resume_hint is off)' : ''}`,
+    states: { done: 'done', in_progress: 'in progress', blocked: 'blocked' },
+  },
+
   start: {
     description: 'ctx-handoff: status; now / dry / distill / resume / continue / resend / refresh on|off / distill on|off',
     taken: err => `/handoff is already taken (${err}), using /ctx-handoff instead`,
@@ -543,6 +558,10 @@ const en: Messages = {
     badJson: msg => `invalid JSON (${msg})`,
     notObject: 'not a JSON object',
     secret: 'looks like a secret',
+    badState: v => `invalid state (${v})`,
+    badFiles: 'files is not a list',
+    tooMany: (k, max) => `${k} has more than ${max} items`,
+    overTotal: max => `progress note over ${max} characters in total`,
     noRecord: '(content not recorded)',
     sample: (why, line) => `${why}: ${line}`,
   },

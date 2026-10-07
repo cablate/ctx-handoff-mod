@@ -89,6 +89,12 @@
       "title": "Check \"done\" claims",
       "description": "When Claude says the work is done but edited files and ran no test or check since, ask it once to verify first.",
       "default": true
+    },
+    "resume_hint": {
+      "type": "boolean",
+      "title": "Offer where the last chat stopped",
+      "description": "A new chat in the same workspace is told where the previous one stopped (task, next step, files), if that was within a day. Needs background notes on.",
+      "default": true
     }
   },
   "types": "./types/index.d.ts"

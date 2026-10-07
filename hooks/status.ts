@@ -13,6 +13,8 @@ type StatusInput = {
   tokens: number | undefined; window: number; refreshOn: boolean
   away: Away | undefined; last: Saved | undefined; herr: HandoffError | undefined
   distill: string; guards: string
+  // 最近一份進度備忘的一行說明（沒有就不顯示）
+  progress?: string
 }
 
 export function statusText(s: StatusInput) {
@@ -30,6 +32,7 @@ export function statusText(s: StatusInput) {
     ...(rt.snapshot ? [m.cmd.background(rt.snapshot.tasks, rt.snapshot.oneShot, rt.snapshot.recurring)] : []),
     s.distill,
     s.guards,
+    ...(s.progress ? [s.progress] : []),
     m.loops.status(cfg.retryNudge ? 'on' : 'off', cfg.doneCheck ? 'on' : 'off'),
     '',
     usageText(),

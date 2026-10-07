@@ -16,10 +16,12 @@ type Config = {
   language: 'auto' | Lang
   // 防呆提醒：同樣的失敗連續兩次就提醒換做法；說完成了卻沒驗證就擋一次
   retryNudge: boolean; doneCheck: boolean
+  // 新對話開頭提供上一段對話停在哪（背景整理留下的進度備忘）
+  resumeHint: boolean
 }
 const CONFIG_DEFAULTS: Config = {
   threshold: 600_000, windowRatio: 0.8, idleMs: 55 * 60_000, maxRefresh: 3, minTokens: 30_000,
-  notesModel: 'claude-sonnet-5-5', language: 'auto', retryNudge: true, doneCheck: true,
+  notesModel: 'claude-sonnet-5-5', language: 'auto', retryNudge: true, doneCheck: true, resumeHint: true,
 }
 export const CONFIG_PREFIX = 'ctx-handoff.'
 // 目前的設定：只改欄位、不換物件，各檔 import 到的是同一份
@@ -87,5 +89,6 @@ export function resolveConfig(
     language: lang === 'en' || lang === 'zh-TW' ? lang : 'auto',
     retryNudge: bool('retry_nudge', d.retryNudge),
     doneCheck: bool('done_check', d.doneCheck),
+    resumeHint: bool('resume_hint', d.resumeHint),
   }
 }

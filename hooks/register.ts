@@ -5,7 +5,9 @@ import { panelTree } from './panel'
 import type { PanelActions } from './panel'
 import { pickLang, setLang, t } from './i18n'
 import type { Lang } from './i18n'
-import { applyActions, distillPrompt, parseActions, squash } from './distill'
+import { applyActions, distillPrompt, latestProgress, parseActions, squash } from './distill'
+import { progressForPrompt, progressKey, progressOffer, withOffered } from './progress'
+import type { Progress, ProgressFields } from './progress'
 import { GUARD_MIN_COUNT, applyGuardChange, guardCandidatesOf, guardChangeOf, guardHits, guardListText, guardPrompt, guardSummaryText, inputText, parseGuards, withProposals } from './guards'
 import type { Guard, GuardMode } from './guards'
 import { NOTE_TAG, contextText, localStamp, memHead, noteBlock, parseNotes, renderNotes, tag } from './notes'
@@ -121,11 +123,14 @@ async function clearAndSubmit($: EngineInterface, text: string) {
   await touchSeen($, key)
   rt.myPending = { sid }
   rt.pendingToasted = false
+  // 新對話第一則訊息（就是這份 handoff）開頭不要再提供同一段的進度備忘：先標記，/clear 失敗再還原
+  await markHanded($, sid, true)
   try {
     await $.command.run({ command: 'clear' })
   } catch (err) {
     await $.store.delete(key)
     rt.myPending = undefined
+    await markHanded($, sid, false)
     return { stage: 'clear', reason: String(err) }
   }
   try {
@@ -204,7 +209,7 @@ async function distill($: EngineInterface, why: string, queue = true) {
       effort: DISTILL_EFFORT,
       maxTokens: DISTILL_MAX_TOKENS,
       timeoutMs: DISTILL_TIMEOUT_MS,
-      system: distillPrompt(transcript.found ? prev?.anchor : undefined, notes, localStamp(started).slice(0, 10)),
+      system: distillPrompt(transcript.found ? prev?.anchor : undefined, notes, localStamp(started).slice(0, 10), progressForPrompt(await loadProgress($), started)),
       prompt: `=== 對話紀錄 ===\n${transcript.text || '（沒有新的對話內容）'}\n=== 對話紀錄結束 ===\n\n依系統指示輸出 ACTIONS。`,
     })
     if (!r.isAnswered) {
@@ -226,6 +231,9 @@ async function distill($: EngineInterface, why: string, queue = true) {
     }
     const { notes: updated, changes } = applyActions(actions, notes, stamp.slice(0, 10), sid)
     if (changes.length > 0) await $.fs.write(file, renderNotes(updated, stamp))
+    // 進度備忘（沒有實際進展時模型不輸出，前一份保留）
+    const progress = latestProgress(actions)
+    if (progress) await saveProgress($, sid, progress, now)
     await $.store.set(key, { turn: turns, at: now, anchor })
     await touchSeen($, key)
     const usage = describeUsage({ input: r.usage.input_tokens, cacheRead: r.usage.cache_read_input_tokens, cacheCreation: r.usage.cache_creation_input_tokens, output: r.usage.output_tokens, ms: now - started })
@@ -622,6 +630,41 @@ async function dropNote($: EngineInterface, key: string) {
   return t().panelCmd.deleted(key.startsWith('m:'), removed.target, dir)
 }
 
+// ---------- 進度備忘：整理順手留下「停在哪」，下一段對話開頭提供一次（型別、文字在 progress.ts） ----------
+// 依工作區存一份在 $.store（暫時性的，不進經驗檔）；同一工作區的多個 session 同時整理時，最後寫的那份為準
+const progressKeyOf = async ($: EngineInterface) => progressKey(await projectKey($))
+const loadProgress = async ($: EngineInterface) => (await $.store.get(await progressKeyOf($))) as Progress | undefined
+
+// 已經交接出去的 session 之後才跑完的整理不存（handoff 摘要已涵蓋）
+async function saveProgress($: EngineInterface, sid: string, p: ProgressFields, at: number) {
+  if (rt.handed.has(sid)) return
+  await $.store.set(await progressKeyOf($), { ...p, sid, at } satisfies Progress)
+}
+
+// 自動交接（/clear 之後把 handoff 送進新對話）：這個 session 的進度備忘不再提供；on=false 還原。
+// 進度只是附帶的，失敗不影響交接
+async function markHanded($: EngineInterface, sid: string, on: boolean) {
+  try {
+    if (on) rt.handed.add(sid)
+    else rt.handed.delete(sid)
+    const p = await loadProgress($)
+    if (p?.sid !== sid) return
+    const { handed: _h, ...rest } = p
+    await $.store.set(await progressKeyOf($), on ? { ...rest, handed: true as const } : rest)
+  } catch {}
+}
+
+// 這段對話開頭要提供的進度：不是這個 session 留下的、一天內、沒被 handoff 取代、還沒提供給這個 session
+async function progressBlock($: EngineInterface) {
+  if (!cfg.resumeHint) return undefined
+  const p = await loadProgress($)
+  const sid = await $.session.id()
+  const text = progressOffer(p, sid, await $.clock.now())
+  if (!text || !p) return undefined
+  await $.store.set(await progressKeyOf($), withOffered(p, sid))
+  return text
+}
+
 // ---------- 放進專案 ----------
 const promoteKey = async ($: EngineInterface) => `promote:${await projectKey($)}`
 const loadAsked = async ($: EngineInterface) => ((await $.store.get(await promoteKey($))) as Record<string, PromoteAsk> | undefined) ?? {}
@@ -778,12 +821,19 @@ export const register: Register = on => {
   // 每段新對話（含 /clear 之後）開頭帶入這個工作區的經驗；只在開頭一次，不影響之後的快取
   on('prompt.context', async ($, e, next) => {
     const out = await next(e)
+    await initLang($)
     try {
       const file = await notesFile($)
       const notes = parseNotes(await readText($, file))
       const text = contextText(notes, file, localStamp(await $.clock.now()).slice(0, 10))
       const promote = await promoteBlock($, notes)
-      const blocks = [...(text ? [{ name: 'ctxHandoffProject', text }] : []), ...(promote ? [{ name: 'ctxHandoffPromote', text: promote }] : [])]
+      // 進度備忘出錯不影響經驗與放進專案的交代
+      const progress = await progressBlock($).catch(() => undefined)
+      const blocks = [
+        ...(text ? [{ name: 'ctxHandoffProject', text }] : []),
+        ...(promote ? [{ name: 'ctxHandoffPromote', text: promote }] : []),
+        ...(progress ? [{ name: 'ctxHandoffProgress', text: progress }] : []),
+      ]
       return blocks.length ? { ...out, blocks: [...out.blocks, ...blocks] } : out
     } catch {
       return out
@@ -968,8 +1018,13 @@ async function status($: EngineInterface) {
   const herr = (await $.store.get(`handoff:error:${pk}`)) as HandoffError | undefined
   return statusText({
     tokens: context.tokens, window: context.window, refreshOn: await isRefreshOn($), away, last: list.at(-1), herr,
-    distill: await distillStatus($), guards: await guardSummary($),
+    distill: await distillStatus($), guards: await guardSummary($), progress: await progressStatus($),
   })
+}
+
+async function progressStatus($: EngineInterface) {
+  const p = await loadProgress($)
+  return p && t().progress.status(new Date(p.at).toLocaleString(), p.task, t().progress.states[p.state] ?? p.state, !cfg.resumeHint)
 }
 
 async function handoffNow($: EngineInterface) {

@@ -100,6 +100,12 @@ The notes are one Markdown file you can edit: `~/.claude/projects/<project path>
 
 Only new conversation since the last update goes to Sonnet 5.5 at low effort; a short one takes about 1,200 tokens and 1.6 seconds. Notes that look like a key or password are dropped.
 
+### Where you left off
+
+Handoff only covers the automatic case. If you run `/clear` yourself, Claude Code crashes, or you just open a new conversation, the new one doesn't know where the last one stopped. So each notes update also leaves a short "where we are" note for this project: the task, whether it's done, in progress or blocked, the last check that passed, one next step and up to 5 key files (about 600 characters at most). It's part of the same request as the notes, so it costs no extra request, and when a notes update finds no real work it keeps the previous note.
+
+The next conversation in the same folder is told about it once, as a hint to Claude: "the last conversation (2 hours ago) stopped at: task…, state…, next step…, files…". If you want to continue, Claude starts from there; if you're doing something else it ignores it and doesn't bring it up. Skipped when the note is older than 24 hours, comes from the same conversation, or the conversation was already handed off automatically (the handoff summary covers it). `/handoff` shows the latest note. Setting: `resume_hint`. It needs background notes on.
+
 ### Guards
 
 Once a rule comes up 3 times, `/handoff guard suggest` turns it into a check on tool calls, e.g. "git push without running tests", set to block or remind. **Nothing applies until you approve it with `/handoff guard on N`**; if a check fails, the call goes through.
@@ -156,6 +162,7 @@ For a clone, use the key `ctx-handoff@inline` instead.
 | `language` | `auto` | Message language: `auto`, `en` or `zh-TW` |
 | `retry_nudge` | `true` | Tell Claude to change approach after the same failure twice in a row |
 | `done_check` | `true` | Ask Claude to verify once when it says "done" after editing files without running a test or check |
+| `resume_hint` | `true` | Tell a new conversation where the last one in this folder stopped (if within a day) |
 
 Values outside the allowed range are pulled back into it. Cache keeping and project notes are switched with `/handoff refresh on|off` and `/handoff distill on|off`.
 
@@ -167,7 +174,7 @@ Values outside the allowed range are pulled back into it. Cache keeping and proj
 
 - **Handoff:** one request that reads the whole conversation (mostly from cache) and writes a summary, about 30 seconds at 800k tokens.
 - **Keeping the cache warm:** each refresh is a tiny request that reads the whole conversation from cache, at about a tenth of the normal input price. At most 3 per idle period.
-- **Project notes:** only the new part of the conversation goes to Sonnet 5.5 at low effort; a short update takes about 1,200 tokens.
+- **Project notes:** only the new part of the conversation goes to Sonnet 5.5 at low effort; a short update takes about 1,200 tokens. The "where you left off" note rides along in the same request.
 
 **What leaves your machine.** Nothing goes anywhere but Anthropic, through Claude Code, just like your conversation itself. To update notes it sends your messages, Claude's replies and tool calls (the first 300 characters of each input and 500 of each result), up to 300,000 characters. Notes that look like a key or password are dropped before they're written.
 
@@ -177,14 +184,14 @@ Values outside the allowed range are pulled back into it. Cache keeping and proj
 |---|---|
 | Project notes | `~/.claude/projects/<project path>/memory/ctx-handoff.md` |
 | Backups of notes deleted from the panel | `.ctx-handoff-backup/` next to the notes file |
-| Recent handoff summaries, errors and settings | `~/.claude/plugins/store/ctx-handoff_*.json` |
+| Recent handoff summaries, the latest "where you left off" note, errors and settings | `~/.claude/plugins/store/ctx-handoff_*.json` |
 
 **What it's allowed to do.** Mods aren't sandboxed; this one runs with your permissions. Check what it uses without running it: `claude plugin validate <ctx-handoff folder>` prints a `hooks:` line (events it receives) and a `calls:` line (what its code calls). For ctx-handoff they mean:
 
 | In the output | Why |
 |---|---|
 | `tool.call` | Applies guards you approved (none until you approve one); notices a tool failing twice in a row and which files were edited or tests run this turn |
-| `prompt.submit`, `prompt.context` | Holds your message during a handoff; loads project notes into a new conversation |
+| `prompt.submit`, `prompt.context` | Holds your message during a handoff; loads project notes, and where the last conversation stopped, into a new conversation |
 | `$.session.messages`, `$.model.complete`, `$.model.fork` | Reads the conversation to write notes and handoff summaries |
 | `$.fs.read`, `$.fs.write`, `$.fs.exists` | Reads and writes the notes file and its backups; checks whether the project is a git repo |
 | `$.prompt.submit`, `$.command.run` | Sends the summary into the new conversation; runs `/clear` |
@@ -230,6 +237,8 @@ Mods load in most places Claude Code runs, but only the terminal and the Desktop
 
 - **On a 5-minute cache, turn cache keeping off.** API-key, Bedrock and Vertex users, and subscribers into usage credits, get a 5-minute cache, so a request at 55 minutes rewrites the whole cache. Run `/handoff refresh off`; it isn't detected automatically.
 - **Notes follow the folder you start in.** Work on another project from your home folder is noted under your home folder.
+- **"Where you left off" is only as fresh as the last notes update.** That runs every 30 messages, after 55 idle minutes, before a handoff, or on `/handoff distill` (conversations under 30k tokens are skipped), so after a short chat or a crash the note may be missing or a few messages behind. Run `/handoff distill` before `/clear` if you want it exact.
+- **Two conversations open in the same folder see each other's note.** The newer conversation is told about the other one's note as if it were a finished one; Claude is asked to ignore it when it doesn't fit what you're doing.
 - **Updating the mod or settings mid-handoff may lose a held message.** The cache timer isn't affected.
 
 ## Changes

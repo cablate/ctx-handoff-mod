@@ -39,6 +39,8 @@ export const rt = {
   // 防呆提醒：各工具最近一段連續失敗，與這一輪的改檔／驗證紀錄。熱重載會清掉，清掉只是少一次提醒
   streaks: new Map<string, Streak>(),
   work: freshWork() as Work,
+  // 已經用 handoff 交接出去的 session（熱重載會清掉）：它的進度備忘不再提供，之後才寫完的整理也不存
+  handed: new Set<string>(),
 }
 
 // 重設程序內狀態（模組重新載入或測試重跑時）；distilling、distillFailed、presentStartedAt 沿用原本不重設的行為
@@ -63,4 +65,5 @@ export function resetRuntime() {
   rt.langReady = undefined
   rt.streaks.clear()
   rt.work = freshWork()
+  rt.handed.clear()
 }

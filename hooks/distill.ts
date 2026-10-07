@@ -1,5 +1,7 @@
 // 背景整理：給整理模型的提示、模型輸出的 JSON 動作（驗證、套用）與金鑰檢查（純函式，不碰 $）
 import { t } from './i18n'
+import { PROGRESS_FIELD_MAX, PROGRESS_FILES_MAX, PROGRESS_FILE_MAX, PROGRESS_TASK_MAX, PROGRESS_TOTAL_MAX, isProgressState, progressSize } from './progress'
+import type { ProgressFields } from './progress'
 import { EVIDENCE_KEEP, NOTE_TAG, STALE_DAYS, inProject, isArchived, memHead, memOneLine, projectOf, ruleText, tag } from './notes'
 import type { Change, Memory, Notes, Rule } from './notes'
 
@@ -14,7 +16,8 @@ const RULE_TEXT_MAX = 150
 const QUOTE_TYPES = ['user', 'feedback']
 
 // 整理提示：這個工作區現有的記憶與規則（編號只在這次有效）
-export function distillPrompt(anchor: string | undefined, notes: Notes, day: string) {
+// progress：目前存著的進度（已轉成一行文字），讓模型接著更新而不是從片段猜
+export function distillPrompt(anchor: string | undefined, notes: Notes, day: string, progress = '（無）') {
   const mem = notes.memory.length
     ? notes.memory.map((m, i) => `M${i + 1} ${memOneLine(m)}${isArchived(m, day) ? `（已封存：超過 ${STALE_DAYS} 天沒被證實）` : ''}`)
     : ['（無）']
@@ -53,6 +56,12 @@ export function distillPrompt(anchor: string | undefined, notes: Notes, day: str
     '只收三段都有的：問題或摩擦 → 實際行動 → 觀察到的結果。',
     '同一個教訓再次被證實（使用者確認，或工具結果證明有效），就用 confirm_rule 增加出現次數，不要新增。',
     '',
+    '三、進度（set_progress）：這個工作區「現在停在哪」，給之後新開的對話接續用；不是記憶，不會寫進經驗檔。',
+    '目前的進度：' + progress,
+    `- 附上的對話有實際的工作進展（改了東西、跑了驗證、做了決定、遇到阻礙）才輸出一行 set_progress；只是閒聊、提問、查資料就不輸出，前一份進度會保留。每次最多一行，整份取代舊的。`,
+    `- task：目前的任務，一句話（${PROGRESS_TASK_MAX} 字內）；state：done、in_progress、blocked 三選一；verified：最後一次實際驗證的結果，寫跑了什麼、結果如何（${PROGRESS_FIELD_MAX} 字內），沒驗證過就省略，不要猜；next：下一步，只寫一個動作（${PROGRESS_FIELD_MAX} 字內，done 可省略）；files：最相關的檔案路徑，最多 ${PROGRESS_FILES_MAX} 個。`,
+    `- 全部加起來不超過 ${PROGRESS_TOTAL_MAX} 字，超過整行丟掉。`,
+    '',
     '輸出格式（照抄標記；一行一個 JSON 物件，不要其他文字；沒有變動就留空）：',
     ACTIONS_START,
     '{"op":"add_memory","type":"feedback","title":"…","how":"…","why":"…","evidence":"…","quote":"…"}',
@@ -63,6 +72,7 @@ export function distillPrompt(anchor: string | undefined, notes: Notes, day: str
     '{"op":"confirm_rule","id":"R2","evidence":"…"}',
     '{"op":"update_rule","id":"R2","rule":"…"}',
     '{"op":"delete_rule","id":"R4","reason":"…"}',
+    '{"op":"set_progress","task":"…","state":"in_progress","verified":"…","next":"…","files":["…"]}',
     ACTIONS_END,
     'type 只能是 user、feedback、project、reference。',
     '每行必須是合法 JSON：字串裡的雙引號寫成 \\"，不要換行。',
@@ -86,6 +96,7 @@ type Action =
   | { op: 'confirm_rule'; i: number; evidence: string }
   | { op: 'update_rule'; i: number; rule: string }
   | { op: 'delete_rule'; i: number }
+  | ({ op: 'set_progress' } & ProgressFields)
 
 
 // 非空字串：換行與連續空白收成一個空格，避免一個欄位寫出多行、破壞 md 結構
@@ -180,6 +191,20 @@ function toAction(o: Record<string, unknown>, notes: Notes, userText: string): A
       if (typeof r === 'string') return r
       return missing({ reason: str(o.reason) }) ?? { op: 'delete_rule', ...r }
     }
+    case 'set_progress': {
+      const [task, verified, next] = [o.task, o.verified, o.next].map(str)
+      const state = isProgressState(o.state) ? o.state : undefined
+      if (o.files !== undefined && !Array.isArray(o.files)) return t().reject.badFiles
+      const files = ((o.files as unknown[] | undefined) ?? []).map(str).filter((f): f is string => f !== undefined)
+      // done 不一定有下一步，其餘狀態都要
+      const bad = (state ? undefined : t().reject.badState(String(o.state)))
+        ?? missing({ task, ...(state === 'done' ? {} : { next }) })
+        ?? tooLong({ task: [task, PROGRESS_TASK_MAX], verified: [verified, PROGRESS_FIELD_MAX], next: [next, PROGRESS_FIELD_MAX], ...Object.fromEntries(files.map((f, i): [string, [string, number]] => [`files[${i}]`, [f, PROGRESS_FILE_MAX]])) })
+        ?? (files.length > PROGRESS_FILES_MAX ? t().reject.tooMany('files', PROGRESS_FILES_MAX) : undefined)
+      if (bad) return bad
+      const p: ProgressFields = { task: task!, state: state!, ...(verified ? { verified } : {}), ...(next ? { next } : {}), files }
+      return progressSize(p) > PROGRESS_TOTAL_MAX ? t().reject.overTotal(PROGRESS_TOTAL_MAX) : { op: 'set_progress', ...p }
+    }
     default:
       return t().reject.badOp(String(o.op))
   }
@@ -227,6 +252,12 @@ export function parseActions(text: string, notes: Notes, userText = ''): { actio
     else actions.push(a)
   }
   return { actions, rejected }
+}
+
+// 這批動作裡最後一個有效的 set_progress（進度不屬於經驗檔，不經過 applyActions）
+export function latestProgress(actions: Action[]): ProgressFields | undefined {
+  const a = actions.findLast((x): x is Extract<Action, { op: 'set_progress' }> => x.op === 'set_progress')
+  return a && { task: a.task, state: a.state, ...(a.verified ? { verified: a.verified } : {}), ...(a.next ? { next: a.next } : {}), files: a.files }
 }
 
 // 依序套用已驗證的動作；刪除先標記成 undefined，編號不會因此位移
