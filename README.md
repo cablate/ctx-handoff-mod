@@ -94,6 +94,8 @@ What you correct or explain becomes notes for this project, loaded into each new
 
 The notes are one Markdown file you can edit: `~/.claude/projects/<project path>/memory/ctx-handoff.md`.
 
+**Rules move into your repo.** Once a rule has come up 3 times, or a guard is on, the next conversation started in a git repo asks Claude to put it where your project keeps its rules (AGENTS.md, CLAUDE.md or an existing hook), after it finishes what you asked. Claude checks for duplicates, doesn't commit, and ends its reply with one line saying what it added and where, so you see it with your usual diff. From then on the repo holds the rule: it works on any machine and with any tool, and ctx-handoff stops loading its own copy. If you don't want it, say so; Claude undoes the change and it won't be asked again. Each rule is asked about at most twice.
+
 Only new conversation since the last update goes to Sonnet 5.5 at low effort; a short one takes about 1,200 tokens and 1.6 seconds. Notes that look like a key or password are dropped.
 
 ### Guards
@@ -168,6 +170,7 @@ Settings are constants at the top of [`hooks/register.ts`](hooks/register.ts). I
 | `$.fs.read`, `$.fs.write` | Reads and writes the notes file and its backups |
 | `$.prompt.submit`, `$.command.run` | Sends the summary into the new conversation; runs `/clear` |
 | `$.env.get` (`CLAUDE_CONFIG_DIR`, `HOME`, `USERPROFILE`) | Finds your `~/.claude` folder |
+| `$.tool.register` | Gives Claude one tool, `mark_in_project`, to report where it put a rule in your repo |
 | `$.settings.read` | Reads Claude Code's `language` setting to pick the message language |
 
 It makes no network requests of its own and starts no programs (no `$.http` or `$.process` calls). To run a session without it, or any other mod, start Claude Code with `claude --safe-mode`. See also [`SECURITY.md`](SECURITY.md).
@@ -206,7 +209,6 @@ Mods load in most places Claude Code runs, but only the terminal and the Desktop
 ## Limitations
 
 - **On a 5-minute cache, turn cache keeping off.** API-key, Bedrock and Vertex users, and subscribers into usage credits, get a 5-minute cache, so a request at 55 minutes rewrites the whole cache. Run `/handoff refresh off`; it isn't detected automatically.
-- **Cache keeping isn't fully confirmed.** It's not yet certain the request actually extends the main conversation's cache.
 - **Notes follow the folder you start in.** Work on another project from your home folder is noted under your home folder.
 - **Updating the mod or settings mid-handoff may lose a held message.** The cache timer isn't affected.
 

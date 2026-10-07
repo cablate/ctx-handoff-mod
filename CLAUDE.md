@@ -34,6 +34,7 @@ node tools/status.mjs             # 確認各 session 已熱重載、看整理�
 - **守門只採用使用者核准的**：`/handoff guard suggest` 把出現 3 次以上的規則交給 `DISTILL_MODEL` 提草稿（工具名、match／unless regex、deny 或 remind），程式驗證格式並試比對這段對話已跑過的工具呼叫，存成草稿；`/handoff guard on N` 才生效。設定依工作區存在 `$.store`（`guards:<工作區>`），不寫進經驗檔（不佔新對話 context）。`tool.call` hook 出錯時放行，不擋正常工作。
 - **面板只放要人判斷、按一下的事**：`/handoff panel` 開關輸入框上方的面板（`AbovePrompt`，畫面在 `hooks/panel.tsx`；不用 `Pane`，終端機全螢幕版面的 Pane 一定停靠側邊，維護者要放在輸入框上方），列守門草稿與核准、最近一次整理的變動、刪掉記錯的記憶或規則（按兩次確認，寫檔前備份到 `.ctx-handoff-backup/`）。狀態數字（快取、花費、context）留給 status line，不放面板（維護者 2026-10-06 決定）。render hook 只讀 `$.state` 的 `panelUi`（分頁、展開、確認中）與 `panelData`（資料快照），不讀檔也不讀 store；快照在開面板、按動作、`/handoff guard`、整理寫檔、守門觸發、回合結束時重算。每次重畫都讀檔會讓按鈕等 I/O，面板像卡死（2026-10-06）。
 - **`$.state` 放熱重載後還要接得上的 session 狀態**：面板與閒置計時（到期時間、刷新次數）。熱重載清掉計時器，`session.start` 依 `idle` 照原本的到期時間重排，過期超過 5 分鐘就不補。契約在 `types/index.d.ts`，加新的值要先宣告。跨 session 的資料仍放 `$.store`。
+- **證實過的規則放進 repo：AI 來做，mod 只交代與記帳**（維護者 2026-10-07 決定，不分個人或專案）：出現 `PROMOTE_MIN_COUNT`（3）次以上的規則與啟用中的守門，在 git repo 開的新對話由 `prompt.context` 交代 AI：先做完使用者的事，再依專案慣例放進 repo、檢查重複、不 commit，完成後呼叫 `mcp__ctx-handoff__mark_in_project`。mod 不自己寫 repo：放哪、有沒有重複、hook 有沒有效都要判斷，而且 mod 寫檔會繞過權限確認。規則記 `- 專案：已在 <位置>`（之後不帶入、不提議守門）或 `- 專案：不放`；守門記 `project` 並停用。交代紀錄在 `$.store` 的 `promote:<工作區>`：同一條 6 小時內不交給別的對話、最多交代 2 次。工具只在第一個請求之前註冊：工具清單在快取前綴裡，熱重載進已經開始的對話時中途加工具會讓整段快取重寫；熱重載時已註冊過的就用 `$.tool.list()` 接回，沒有就不交代。
 - **指令名稱**：`/handoff` 被使用者自己的指令或 skill 佔用時，改註冊 `/ctx-handoff`。
 - **介面語言兩種（`UI_LANG`，字串在 `hooks/i18n.ts`）**：`auto` 先看 Claude Code 的 `language` 設定，沒設就看系統語系（`Intl`），`zh` 開頭用繁體中文，其餘英文；不讀 `LANG`：Windows 的 Git Bash 常設 `en_US`，和系統顯示語言不一致（維護者 2026-10-07 決定）；每個 hook 進來先 `await initLang($)`，之後 `t()` 同步取字串。只翻給人看的文字（狀態列、toast、紀錄、指令回覆、面板、交接提示）；狀態列、toast、紀錄、指令回覆與 drop 提示都不加 `[ctx-handoff]`（引擎會加 `ctx-handoff:`；維護者 2026-10-07 看到面板開啟回覆重複後決定）；送進對話的交接訊息與守門提醒仍以 `[ctx-handoff]` 開頭，整理提示靠它辨認。給模型的提示、經驗檔格式與標記（`NOTE_TAG`、標題、`做法／理由／根據`）、帶入新對話的記憶區塊不翻譯：它們是資料，改了舊檔讀不了，又不寫雙格式判斷，所以英文介面下經驗檔的標題與標記仍是中文；記憶與交接摘要的內容則由提示要求「用使用者在對話裡使用的語言撰寫」。新字串兩種語言一起加；測試的 `world()` 用 `settings.read` 把 `language` 釘成繁體中文（系統語系假造不了，判斷邏輯直接測 `pickLang`），不然結果跟著執行測試那台機器的語系。
 
@@ -54,6 +55,8 @@ node tools/status.mjs             # 確認各 session 已熱重載、看整理�
 | 熱重載 | 對話檔留下 `ctx-handoff: reloaded (N hooks: …)`；回合中存的檔要等回合結束才重載（落在 `turn.complete` 之後）。會清掉模組變數與計時器（攔下的訊息、排入的差異），`$.state` 保留，`register` 與 `session.start` 重跑 |
 | `$.state` | session 範圍；render hook 讀了就訂閱，寫入只重畫讀它的地方，不用 `$.ui.invalidate`；render 裡不能寫，要從按鈕 handler 或其他事件用 `update()` 寫 |
 | 耗時 | handoff fork 在 800k context 約 28 秒 |
+| `$.tool.register` | `session.start` 註冊，回傳完整名稱 `mcp__<plugin>__<name>`；同一個 `tool.call` hook 依 `e.tool` 接手，回 `{ result: 字串 }`（回物件會被輸出格式檢查擋掉）。輸入參數直接展開在 `e` 上（`e.items`），不在 `e.input` |
+| 保持快取 | 實機紀錄：第 2、3 次刷新（閒置 110、165 分鐘）`cache_creation=0`，整段從快取讀，刷新確實延長了快取 |
 
 ## 測試引擎的限制
 

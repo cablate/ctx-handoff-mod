@@ -91,7 +91,7 @@ export function panelTree(ui: Elements, v: PanelView, act: PanelActions) {
               <Box flexGrow={1}>
                 <Text>
                   {badge(`● ${label}`, color)} <Text dimColor>{m.guardMeta(g.id, t().guard.mode[g.mode], g.hits)}</Text>{' '}
-                  {fit(g.rule, short - 24)}
+                  {fit(g.rule, short - 24)}{g.project ? <Text dimColor> · {m.inProject(g.project)}</Text> : null}
                 </Text>
               </Box>
               {g.state === 'on'
@@ -180,7 +180,7 @@ export function panelTree(ui: Elements, v: PanelView, act: PanelActions) {
       {v.rules.map(r => (
         <Box key={`r:${r.name}`}>
           <Box flexGrow={1}>
-            <Text>{badge(m.ruleCount(r.count).padStart(4), r.count >= 3 ? 'green' : r.count >= 2 ? ACCENT : 'gray')} {fit(r.name, short - 6)}</Text>
+            <Text>{badge(m.ruleCount(r.count).padStart(4), r.count >= 3 ? 'green' : r.count >= 2 ? ACCENT : 'gray')} {fit(r.name, short - 6 - (r.project ? m.inProject(r.project).length + 3 : 0))}{r.project ? <Text dimColor> · {m.inProject(r.project)}</Text> : null}</Text>
           </Box>
           {dropButtons(`r:${r.name}`)}
         </Box>

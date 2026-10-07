@@ -92,6 +92,8 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 
 筆記就是一個 Markdown 檔：`~/.claude/projects/<專案路徑>/memory/ctx-handoff.md`，可以直接改。
 
+**規則會移進你的 repo。** 一條規則出現 3 次、或守門已啟用後，下次在 git repo 裡開新對話，Claude 會先做完你交代的事，再把它放進專案存放規則的地方（AGENTS.md、CLAUDE.md 或現有的 hook）。Claude 會檢查有沒有重複、不會 commit，並在回覆最後用一句話說明加了什麼、加在哪，你看平常的 diff 就會看到。之後規則存在 repo 裡，換電腦、換工具都用得到，ctx-handoff 也不再帶入自己那份。不想要就直接說，Claude 會還原改動，之後不再提。同一條最多問兩次。
+
 整理只送上次之後的新對話給 Sonnet 5.5（effort low），短對話約 1,200 token、1.6 秒。像金鑰、密碼的內容不會寫進筆記。
 
 ### 守門
@@ -166,6 +168,7 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 | `$.fs.read`、`$.fs.write` | 讀寫筆記檔與備份 |
 | `$.prompt.submit`、`$.command.run` | 把摘要送進新對話；執行 `/clear` |
 | `$.env.get`（`CLAUDE_CONFIG_DIR`、`HOME`、`USERPROFILE`） | 找到你的 `~/.claude` 資料夾 |
+| `$.tool.register` | 給 Claude 一個工具 `mark_in_project`，用來回報規則放進 repo 的哪裡 |
 | `$.settings.read` | 讀 Claude Code 的 `language` 設定，決定介面語言 |
 
 它自己不發網路請求，也不啟動其他程式（沒有 `$.http` 或 `$.process` 呼叫）。想在不載入它或任何 mod 的情況下開 session，用 `claude --safe-mode` 啟動。另見 [`SECURITY.md`](SECURITY.md)。
@@ -204,7 +207,6 @@ Claude Code 大多數執行環境都會載入 mod，但只有終端機和 Deskto
 ## 限制
 
 - **5 分鐘快取的使用者請關掉保持快取。** 用 API key、Bedrock、Vertex，或訂閱額度用完、開始扣 usage credits 時，快取只有 5 分鐘，55 分鐘後的請求反而要重寫整段快取。請執行 `/handoff refresh off`，它不會自動判斷。
-- **保持快取的效果尚未完全確認。** 目前還不確定這個請求能否真正延長主對話的快取。
 - **筆記跟著啟動的資料夾走。** 在家目錄開 Claude Code 處理別的專案，筆記會記在家目錄。
 - **交接中更新 mod 或改設定，暫存的訊息可能遺失。** 保持快取的計時不受影響。
 

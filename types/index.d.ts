@@ -6,6 +6,7 @@ export type PanelGuard = {
   mode: 'deny' | 'remind'; state: 'proposed' | 'on' | 'off'; hits: number
   replay?: { hits: number; calls: number }
   bad?: string; good?: string
+  project?: string
 }
 
 // 面板要顯示的資料快照：開面板、按動作、整理寫檔、指令改守門、回合結束時重算；畫面只讀這份，不讀檔
@@ -20,7 +21,8 @@ export type PanelData = {
   // 超過 staleDays 天沒被證實、不帶入新對話的事實類記憶（[類型] 標題）
   archived: string[]
   staleDays: number
-  rules: { name: string; count: number }[]
+  // project：「已在 <位置>」或「不放」
+  rules: { name: string; count: number; project?: string }[]
 }
 
 // 面板的操作狀態

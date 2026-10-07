@@ -2,6 +2,16 @@
 
 Notable changes to ctx-handoff. Versions follow the `version` in `.claude-plugin/plugin.json`.
 
+## Unreleased
+
+### Added
+
+- **Rules move into your repo:** a rule that came up 3 times, or a guard that's on, is handed to Claude at the start of the next conversation in a git repo. Claude puts it where the project keeps its rules, checks for duplicates, doesn't commit, and reports where it went; ctx-handoff then stops loading its own copy. Say no and it's undone and not asked again.
+
+### Changed
+
+- Removed the "cache keeping isn't confirmed" limitation: real sessions show the 2nd and 3rd refreshes (110 and 165 minutes idle) reading the whole conversation from cache.
+
 ## 0.3.0 – 2026-10-07
 
 ### Added

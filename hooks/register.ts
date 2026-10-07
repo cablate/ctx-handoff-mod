@@ -62,6 +62,13 @@ const RULE_NAME_MAX = 40
 const RULE_TEXT_MAX = 150
 // 這兩類講的是使用者說過的話：一定要附對話裡找得到的原話
 const QUOTE_TYPES = ['user', 'feedback']
+// 放進專案：出現這麼多次的規則與啟用中的守門，在新對話開頭交代 AI 寫進 repo（AI 判斷放哪、檢查重複、不 commit），
+// 完成後呼叫本 plugin 的工具回報。同一條最多交代幾次、多久內不交代給別的對話、一次最多幾條
+const PROMOTE_MIN_COUNT = 3
+const PROMOTE_MAX_ASKS = 2
+const PROMOTE_COOLDOWN_MS = 6 * 60 * 60_000
+const PROMOTE_ITEMS = 3
+const PROMOTE_TOOL = 'mark_in_project'
 type Rule = { name: string; count: number; body: string[] }
 type Memory = { type: string; title: string; how?: string; why?: string; evidence: string[] }
 // extra：不認得的 `## ` 區段（含標題行）原樣保留，輸出在規則之後
@@ -83,12 +90,22 @@ const memOneLine = (m: Memory) =>
 const ruleText = (r: Rule) =>
   (r.body.find(l => l.startsWith('- 規則：')) ?? r.body[0] ?? '').replace(/^- 規則：/, '').trim()
 
+// 規則的專案狀態：「- 專案：已在 <位置>」放進 repo 了（不再帶入，repo 的才是正本）；「- 專案：不放」使用者不要放進 repo
+const PROJECT_PREFIX = '- 專案：'
+const PROJECT_IN = '已在 '
+const PROJECT_DECLINED = '不放'
+const projectOf = (r: Rule) => r.body.find(l => l.startsWith(PROJECT_PREFIX))?.slice(PROJECT_PREFIX.length).trim()
+const inProject = (r: Rule) => projectOf(r)?.startsWith(PROJECT_IN) === true
+function setProject(r: Rule, value: string) {
+  r.body = [...r.body.filter(l => !l.startsWith(PROJECT_PREFIX)), `${PROJECT_PREFIX}${value}`]
+}
+
 // 整理提示：這個工作區現有的記憶與規則（編號只在這次有效）
 function distillPrompt(anchor: string | undefined, notes: Notes, day: string) {
   const mem = notes.memory.length
     ? notes.memory.map((m, i) => `M${i + 1} ${memOneLine(m)}${isArchived(m, day) ? `（已封存：超過 ${STALE_DAYS} 天沒被證實）` : ''}`)
     : ['（無）']
-  const rules = notes.rules.length ? notes.rules.map((r, i) => `R${i + 1} ${r.name}｜出現 ${r.count} 次｜${ruleText(r)}`) : ['（無）']
+  const rules = notes.rules.length ? notes.rules.map((r, i) => `R${i + 1} ${r.name}｜出現 ${r.count} 次｜${ruleText(r)}${inProject(r) ? `｜${projectOf(r)}（repo 裡的才是正本，不要 update_rule）` : ''}`) : ['（無）']
   return [
     '你在背景整理使用者訊息裡附上的對話紀錄，目標是讓這個工作區之後的工作越做越好。你沒有工具，只輸出指定格式，由程式寫檔。',
     '用使用者在對話裡使用的語言撰寫（使用者寫中文就用繁體中文（台灣））；程式碼、指令、路徑、錯誤訊息與專有名詞維持原文。',
@@ -490,7 +507,7 @@ const memoryTiers = (notes: Notes, day: string) => {
 
 // 帶入新對話開頭的內容；沒有東西就不帶。根據只給整理模型判斷用，不帶入
 function contextText(notes: Notes, file: string, day: string) {
-  const rules = notes.rules.filter(r => r.count >= INJECT_MIN_COUNT)
+  const rules = notes.rules.filter(r => r.count >= INJECT_MIN_COUNT && !inProject(r))
     .sort((a, b) => b.count - a.count).slice(0, INJECT_RULES)
   const full = notes.memory.filter(m => !FACT_TYPES.includes(m.type))
   const titles = notes.memory.filter(m => FACT_TYPES.includes(m.type) && !isArchived(m, day))
@@ -1054,6 +1071,7 @@ async function onStop($: EngineInterface, e: { agent_id?: string; background_tas
 // 重設所有程序內狀態（模組重新載入或測試重跑時）
 function resetState() {
   idle?.cancel()
+  promoteTool = undefined
   idle = undefined
   refreshes = 0
   busy = false
@@ -1123,6 +1141,8 @@ type Guard = {
   bad?: string; good?: string
   // 提案時試比對這段對話已跑過的工具呼叫：命中幾次、總共幾次
   replay?: { hits: number; calls: number }
+  // 放進專案：「已在 <位置>」（個人這份停用）或「不放」
+  project?: string
 }
 
 // 每次工具呼叫都會用到：工作區在 process 內不變，算一次就記住（熱重載會重算）
@@ -1228,7 +1248,7 @@ function parseGuards(text: string, names: Set<string>) {
 async function guardCandidates($: EngineInterface) {
   const guards = await loadGuards($)
   const notes = parseNotes(await readText($, await notesFile($)))
-  return notes.rules.filter(r => r.count >= GUARD_MIN_COUNT && !guards.some(g => g.rule === r.name))
+  return notes.rules.filter(r => r.count >= GUARD_MIN_COUNT && !inProject(r) && !guards.some(g => g.rule === r.name))
 }
 
 async function suggestGuards($: EngineInterface) {
@@ -1348,14 +1368,14 @@ async function loadPanelData($: EngineInterface): Promise<PanelData> {
   return {
     file,
     guards,
-    candidates: notes.rules.filter(r => r.count >= GUARD_MIN_COUNT && !guards.some(g => g.rule === r.name)).length,
+    candidates: notes.rules.filter(r => r.count >= GUARD_MIN_COUNT && !inProject(r) && !guards.some(g => g.rule === r.name)).length,
     ...(d ? { lastDistill: { at: new Date(d.at).toLocaleString(), why: d.why, changes: d.changes } } : {}),
     // 封存的另外列在封存區，這裡不重複
     memory: notes.memory.filter(m => !isArchived(m, today)).slice(-PANEL_MEMORY).map(m => ({ head: memHead(m), detail: memLines(m).slice(1).map(l => l.replace(/^\s+- /, '')) })),
     memoryTotal: notes.memory.length,
     archived: notes.memory.filter(m => isArchived(m, today)).map(memHead),
     staleDays: STALE_DAYS,
-    rules: [...notes.rules].sort((a, b) => b.count - a.count).map(r => ({ name: r.name, count: r.count })),
+    rules: [...notes.rules].sort((a, b) => b.count - a.count).map(r => ({ name: r.name, count: r.count, ...(projectOf(r) ? { project: projectOf(r) } : {}) })),
   }
 }
 
@@ -1407,6 +1427,113 @@ async function dropNote($: EngineInterface, key: string) {
   return t().panelCmd.deleted(key.startsWith('m:'), target, dir)
 }
 
+// ---------- 放進專案 ----------
+// 工具的完整名稱（mcp__<plugin>__<name>），以註冊結果為準；這個 process 沒註冊就是 undefined
+let promoteTool: string | undefined
+const PROMOTE_DESCRIPTION = 'Record where a ctx-handoff rule or guard now lives in this repo (after you wrote it into AGENTS.md, CLAUDE.md or a project hook), or that the user declined. ctx-handoff then stops loading its own copy.'
+const PROMOTE_SCHEMA = {
+  type: 'object',
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          rule: { type: 'string', description: '規則名稱，照抄「」裡的文字' },
+          guard: { type: 'number', description: '守門編號' },
+          where: { type: 'string', description: '放在 repo 的哪裡，例如 AGENTS.md 或 .claude/hooks/guard.mjs' },
+          declined: { type: 'boolean', description: '使用者不要放進 repo' },
+        },
+      },
+    },
+  },
+  required: ['items'],
+}
+
+type PromoteAsk = { asks: number; at: number }
+const promoteKey = async ($: EngineInterface) => `promote:${await projectKey($)}`
+const loadAsked = async ($: EngineInterface) => ((await $.store.get(await promoteKey($))) as Record<string, PromoteAsk> | undefined) ?? {}
+
+// 這段對話開頭要交代的：session 啟動資料夾是 git repo 才交代；交代過的隔一段時間、最多幾次
+async function promoteBlock($: EngineInterface, notes: Notes) {
+  if (promoteTool === undefined) return undefined
+  const root = slash(await $.session.root())
+  if (!(await $.fs.exists(`${root}/.git`))) return undefined
+  const asked = await loadAsked($)
+  const now = await $.clock.now()
+  const ready = (key: string) => {
+    const a = asked[key]
+    return !a || (a.asks < PROMOTE_MAX_ASKS && now - a.at >= PROMOTE_COOLDOWN_MS)
+  }
+  const guards = (await loadGuards($)).filter(g => g.state === 'on' && g.project === undefined).map(g => ({
+    key: `g:${g.id}`,
+    line: `- 守門 #${g.id}（${g.mode === 'deny' ? '擋下' : '提醒'}）：${g.rule}｜工具 ${g.tool}｜符合 /${g.match}/${g.unless ? `，除非 /${g.unless}/` : ''}｜訊息：${g.message}`,
+  }))
+  const rules = notes.rules.filter(r => r.count >= PROMOTE_MIN_COUNT && projectOf(r) === undefined)
+    .sort((a, b) => b.count - a.count)
+    .map(r => ({ key: `r:${r.name}`, line: `- 規則「${r.name}」（${r.count} 次）：${ruleText(r)}` }))
+  const items = [...guards, ...rules].filter(c => ready(c.key)).slice(0, PROMOTE_ITEMS)
+  if (items.length === 0) return undefined
+  for (const c of items) asked[c.key] = { asks: (asked[c.key]?.asks ?? 0) + 1, at: now }
+  await $.store.set(await promoteKey($), asked)
+  return [
+    `${NOTE_TAG} 下面這些做法已在過去的對話裡被證實多次，但還沒寫進這個 repo。先完成使用者這次交代的事，告一段落後再順手處理；使用者在處理緊急問題、或這次不在這個 repo 工作時，就先不要做。`,
+    '1. 依專案慣例選位置（AGENTS.md、CLAUDE.md，或既有的 .claude/hooks、守門腳本）。先讀現有內容：已有相同的規則就不要重複寫，只回報它在哪。',
+    '2. 守門（會擋下或提醒的工具呼叫）優先併進專案既有的 hook；寫成 hook 時實際觸發一次，確認有效。',
+    '3. 只改檔，不要 commit 或 push。',
+    `4. 完成後呼叫 ${promoteTool} 回報每條放在哪，並在回覆最後用一句話告訴使用者放了什麼、放在哪。`,
+    `5. 使用者說不要，就還原改動，再用 ${promoteTool} 標記 declined。`,
+    '',
+    ...items.map(c => c.line),
+  ].join('\n')
+}
+
+// AI 回報放進 repo 的結果：規則寫「- 專案：」行，守門記 project 並停用個人這份；回給 AI 一段結果
+async function markInProject($: EngineInterface, raw: unknown) {
+  const items = Array.isArray(raw) ? (raw as Record<string, unknown>[]) : []
+  const file = await notesFile($)
+  const notes = parseNotes(await readText($, file))
+  const guards = await loadGuards($)
+  const asked = await loadAsked($)
+  const done: string[] = []
+  const failed: string[] = []
+  let notesChanged = false
+  let guardsChanged = false
+  for (const it of items) {
+    const declined = it.declined === true
+    const where = str(it.where)
+    const label = typeof it.rule === 'string' ? `規則「${it.rule}」` : typeof it.guard === 'number' ? `守門 #${it.guard}` : JSON.stringify(it)
+    if (!declined && !where) { failed.push(`${label}：缺少 where`); continue }
+    const value = declined ? PROJECT_DECLINED : `${PROJECT_IN}${where}`
+    if (typeof it.rule === 'string') {
+      const r = notes.rules.find(x => x.name === (it.rule as string).trim())
+      if (!r) { failed.push(`${label}：經驗檔裡沒有這條`); continue }
+      setProject(r, value)
+      notesChanged = true
+      delete asked[`r:${r.name}`]
+      done.push(`${label}：${value}`)
+    } else if (typeof it.guard === 'number') {
+      const g = guards.find(x => x.id === it.guard)
+      if (!g) { failed.push(`${label}：沒有這個守門`); continue }
+      g.project = value
+      if (!declined) g.state = 'off'
+      guardsChanged = true
+      delete asked[`g:${g.id}`]
+      done.push(`${label}：${value}${declined ? '' : '（ctx-handoff 自己這份已停用）'}`)
+    } else {
+      failed.push(`${label}：要有 rule 或 guard`)
+    }
+  }
+  if (notesChanged) await $.fs.write(file, renderNotes(notes, localStamp(await $.clock.now())))
+  if (guardsChanged) await $.store.set(await guardsKey($), guards)
+  if (notesChanged || guardsChanged) await $.store.set(await promoteKey($), asked)
+  await refreshPanel($)
+  return [
+    ...(done.length ? ['已記下：', ...done] : []),
+    ...(failed.length ? ['沒有記下：', ...failed] : []),
+  ].join('\n') || '沒有收到任何項目'
+}
+
 function panelActions($: EngineInterface): PanelActions {
   // 讀寫檔的動作在背景跑（不讓按鍵等它），跑完重算快照、結果寫進提示列；只改畫面狀態的直接寫 $.state
   const run = (work: () => Promise<string | undefined>) => {
@@ -1452,6 +1579,18 @@ export const register: Register = on => {
         $.ui.log(t().start.registerFailed(String(err2)))
       }
     }
+    // 工具清單在快取前綴裡：已經開始的對話（熱重載）中途加工具，整段快取都要重寫，所以只在第一個請求之前註冊；
+    // 沒註冊到的 process 不交代放進專案，等下次開 Claude Code
+    try {
+      if ((await $.session.turns()) === 0) {
+        promoteTool = (await $.tool.register({ name: PROMOTE_TOOL, description: PROMOTE_DESCRIPTION, inputSchema: PROMOTE_SCHEMA })).tool
+      } else {
+        // 熱重載前已註冊過的，接回來繼續處理（呼叫沒有 hook 接會失敗）
+        promoteTool = (await $.tool.list()).find(x => x.name.endsWith(`__${PROMOTE_TOOL}`) && x.name.includes("ctx-handoff"))?.name
+      }
+    } catch (err) {
+      $.ui.log(t().start.toolFailed(String(err)))
+    }
     try {
       await showDistillStatus($)
     } catch {}
@@ -1474,8 +1613,11 @@ export const register: Register = on => {
     const out = await next(e)
     try {
       const file = await notesFile($)
-      const text = contextText(parseNotes(await readText($, file)), file, localStamp(await $.clock.now()).slice(0, 10))
-      return text ? { ...out, blocks: [...out.blocks, { name: 'ctxHandoffProject', text }] } : out
+      const notes = parseNotes(await readText($, file))
+      const text = contextText(notes, file, localStamp(await $.clock.now()).slice(0, 10))
+      const promote = await promoteBlock($, notes)
+      const blocks = [...(text ? [{ name: 'ctxHandoffProject', text }] : []), ...(promote ? [{ name: 'ctxHandoffPromote', text: promote }] : [])]
+      return blocks.length ? { ...out, blocks: [...out.blocks, ...blocks] } : out
     } catch {
       return out
     }
@@ -1483,6 +1625,10 @@ export const register: Register = on => {
 
   // 守門：只有使用者核准（on）的才比對；hook 自己出錯時放行，不擋正常工作
   on('tool.call', async ($, e, next) => {
+    if (promoteTool !== undefined && e.tool === promoteTool) {
+      await initLang($)
+      return { result: await markInProject($, (e as { items?: unknown }).items) }
+    }
     let hit: Guard | undefined
     try {
       const text = inputText(e as Record<string, unknown>)
