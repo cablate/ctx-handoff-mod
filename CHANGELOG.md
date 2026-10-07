@@ -7,6 +7,7 @@ Notable changes to ctx-handoff. Versions follow the `version` in `.claude-plugin
 ### Added
 
 - **English messages:** messages follow your system language (or Claude Code's `language` setting): Traditional Chinese for Chinese, English otherwise. Set `UI_LANG` to force one.
+- Handoff summaries and project notes are written in the language you use in the conversation.
 - **Install from the plugin marketplace:** `claude plugin marketplace add cablate/ctx-handoff-mod`, then `claude plugin install ctx-handoff@ctx-handoff-mod`.
 - **Guards:** `/handoff guard suggest` turns a rule that came up 3 times into a check on tool calls (block or remind). Nothing applies until you approve it with `/handoff guard on N`.
 - **Panel:** `/handoff panel` opens a panel above the prompt to approve guards, see the latest notes update and delete wrong notes (backed up first).

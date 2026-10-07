@@ -1258,7 +1258,7 @@ test('整理提示：繁體中文指示、只有這個工作區的記憶與規�
   await read($, `${ALPHA}/a.ts`)
   await distillNow($)
   const p = w.forks[0] ?? ''
-  expect(p).toContain('一律用繁體中文（台灣）撰寫；程式碼、指令、路徑、錯誤訊息與專有名詞維持原文')
+  expect(p).toContain('用使用者在對話裡使用的語言撰寫（使用者寫中文就用繁體中文（台灣））；程式碼、指令、路徑、錯誤訊息與專有名詞維持原文')
   expect(p).toContain('不要用他、她等代名詞猜性別')
   expect(p).toContain('M2 [project] 舊 B')
   expect(p).toContain('R1 規則一｜出現 1 次｜做 X')

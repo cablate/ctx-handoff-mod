@@ -33,7 +33,7 @@ ctx-handoff handles these in the background. In normal use you type no commands.
 - API-key, Bedrock or Vertex users: the conversation cache lasts only 5 minutes, so keeping it warm doesn't help and should be turned off (see [Limitations](#limitations)). Everything else works.
 - Anyone who wants notes shared across projects: notes are kept per project folder.
 
-**Status:** experimental. It uses Claude Code's mod feature, which is still in early access, so a Claude Code update may require changes. Messages are in English, or Traditional Chinese when your system language (or Claude Code's `language` setting) is Chinese. Project notes are always written in Traditional Chinese.
+**Status:** experimental. It uses Claude Code's mod feature, which is still in early access, so a Claude Code update may require changes. Messages are in English, or Traditional Chinese when your system language (or Claude Code's `language` setting) is Chinese. Project notes and handoff summaries are written in the language you use in the conversation; the notes file's section labels stay in Chinese.
 
 ## Quick start
 
