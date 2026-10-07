@@ -23,6 +23,7 @@ export type PanelData = {
   staleDays: number
   // project：「已在 <位置>」或「不放」
   rules: { name: string; count: number; project?: string }[]
+  procedures: { name: string; count: number; project?: string }[]
 }
 
 // 面板的操作狀態
@@ -32,7 +33,7 @@ export type PanelUi = {
   // 展開全文的項目（m:<記憶原文>／g<守門編號>／changes）
   expanded: string[]
   suggesting: boolean
-  // 等待確認刪除的項目（m:<記憶原文>／r:<規則名稱>）
+  // 等待確認刪除的項目（m:<記憶原文>／r:<規則名稱>／p:<流程名稱>）
   confirming?: string
   // 上一個動作的結果
   note?: string

@@ -11,6 +11,7 @@
 //   { "file": "...", "mem": "...", "op": "append", "text": "接在句尾的補充" }
 //   { "file": "...", "rule": "標題片段", "op": "delete" | "oneLine", "text": "單行規則（oneLine 用）" }
 //   { "file": "...", "rule": "標題片段", "op": "appendBody", "text": "- 補充：…" }
+//   { "file": "...", "proc": "流程標題片段", "op": "delete" }
 //   { "file": "...", "mem" 或 "rule": "...", "op": "moveTo", "to": "另一個專案" }
 // 每項都必須恰好比對到一條；任何一項不符就整批不寫。寫入前再讀一次，期間被改過就中止。
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
@@ -21,7 +22,7 @@ const [cmd, arg] = process.argv.slice(2)
 const fileOf = f => (existsSync(f) ? f.replace(/\\/g, '/') : `${claudeDir()}/projects/${f}/memory/${NOTES_NAME}`)
 const fail = m => { console.error(`停止：${m}`); process.exit(1) }
 
-// 保留檔頭（標題與說明）與結尾的其他區段，只重排記憶與規則
+// 保留檔頭（標題與說明）與結尾的其他區段，只重排記憶、規則與流程
 function load(file) {
   if (!existsSync(file)) fail(`沒有這個檔案：${file}`)
   const text = readFileSync(file, 'utf8')
@@ -32,6 +33,7 @@ function render(d) {
   const n = d.notes
   const out = [...d.head, '', '## 記憶', ...n.memory, '', '## 規則',
     ...n.rules.flatMap(r => ['', `### ${r.name}（${r.count} 次）`, ...r.body]),
+    ...(n.procedures.length ? ['', '## 流程', ...n.procedures.flatMap(p => ['', `### ${p.name}（${p.count} 次）`, ...p.body])] : []),
     ...(n.extra.length ? ['', ...n.extra] : []), ''].join('\n')
   return d.crlf ? out.replace(/\n/g, '\r\n') : out
 }
@@ -41,6 +43,7 @@ if (cmd === 'list') {
   const { notes } = load(fileOf(arg))
   notes.memory.forEach((m, i) => { console.log(`M${i + 1} ${m.split('\n')[0].slice(0, 110)}`) })
   notes.rules.forEach((r, i) => { console.log(`R${i + 1} ${r.name}（${r.count} 次）`) })
+  notes.procedures.forEach((p, i) => { console.log(`P${i + 1} ${p.name}（${p.count} 次）`) })
 } else if (cmd === 'apply') {
   if (!arg) fail('用法：node tools/notes.mjs apply <ops.json> [--write]')
   const ops = JSON.parse(readFileSync(arg, 'utf8'))
@@ -74,13 +77,18 @@ if (cmd === 'list') {
         if (same) same.count += r.count; else t.notes.rules.push(r)
         d.notes.rules[i] = undefined
       } else fail(`規則不支援 op ${o.op}`)
-    } else fail(`第 ${ops.indexOf(o) + 1} 項沒有 mem 或 rule`)
+    } else if (o.proc !== undefined) {
+      const i = pick(d.notes.procedures, p => p.name, o.proc, '流程')
+      if (o.op === 'delete') d.notes.procedures[i] = undefined
+      else fail(`流程不支援 op ${o.op}`)
+    } else fail(`第 ${ops.indexOf(o) + 1} 項沒有 mem、rule 或 proc`)
   }
   for (const d of docs.values()) {
     const before = parseNotes(d.text)
     d.notes.memory = d.notes.memory.filter(m => m !== undefined)
     d.notes.rules = d.notes.rules.filter(r => r !== undefined)
-    console.log(`${d.file}：記憶 ${before.memory.length} → ${d.notes.memory.length}，規則 ${before.rules.length} → ${d.notes.rules.length}`)
+    d.notes.procedures = d.notes.procedures.filter(p => p !== undefined)
+    console.log(`${d.file}：記憶 ${before.memory.length} → ${d.notes.memory.length}，規則 ${before.rules.length} → ${d.notes.rules.length}，流程 ${before.procedures.length} → ${d.notes.procedures.length}`)
   }
   if (!process.argv.includes('--write')) { console.log('預演完成；加 --write 才寫入'); process.exit(0) }
   for (const d of docs.values()) if (readFileSync(d.file, 'utf8') !== d.text) fail(`${d.file} 在這段期間被改過，重跑一次`)

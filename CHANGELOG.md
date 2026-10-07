@@ -6,6 +6,7 @@ Notable changes to ctx-handoff. Versions follow the `version` in `.claude-plugin
 
 ### Added
 
+- **Procedures become project skills:** background notes now also learn multi-step routines you had Claude repeat (e.g. release: bump version → changelog → tag → GitHub release), kept in a new `## 流程` section of the notes file with a name, when to use it, 2–8 steps, a count and evidence. They are not loaded into new conversations. Once a procedure has come up 3 times, the next conversation in a git repo asks Claude to create `.claude/skills/<name>/SKILL.md` (or extend an existing skill or doc), without committing; `mark_in_project` takes a `procedure` entry like it does for rules. The panel lists procedures under the Rules tab, and `/handoff` shows how many there are.
 - **Better handoff summaries:** the summary now separates verified work from unverified changes, lists approaches that failed, notes anything still running or unsaved, keeps limits you set during the work, and ends with one concrete next step.
 - **Two safety nudges, on by default:** when the same tool call fails twice in a row for the same reason, Claude is told to change approach instead of retrying (`retry_nudge`); when Claude says the work is done after editing code files but ran no test, build or check, it is asked once to verify first (`done_check`). `/handoff` shows both switches.
 

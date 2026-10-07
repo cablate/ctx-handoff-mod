@@ -263,6 +263,9 @@ test('整理提示：繁體中文指示、只有這個工作區的記憶與規�
   expect(p).toContain('=== END ===')
   expect(p).toContain('{"op":"add_memory","type":"feedback","title":"…","how":"…","why":"…","evidence":"…","quote":"…"}')
   expect(p).toContain('{"op":"delete_rule","id":"R4","reason":"…"}')
+  expect(p).toContain('{"op":"add_procedure","name":"…","when":"…","steps":["…","…","…"],"evidence":"…"}')
+  expect(p).toContain('目前的流程：')
+  expect(p).toContain('只收同一種工作在這段對話裡被做了不只一次')
   // 碰過別的 repo 也只寫這個工作區的經驗檔
   expect(w.files.get(ALPHA_NOTES) ?? '').not.toContain('使用者決定交接門檻維持 600k')
   expect(w.files.get(NOTES) ?? '').toContain('使用者決定交接門檻維持 600k')

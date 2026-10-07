@@ -91,10 +91,13 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 
 - **記憶**：偏好、修正、事實、位置。偏好和修正整條帶入（必須是你說過的話）；事實和位置只帶標題，要用時 Claude 再去讀。事實和位置 30 天沒被證實就封存，不帶入但不刪。
 - **規則**：重複出現的做法，例如「Bash 路徑用正斜線（3 次）」。出現 2 次以上才帶入，最多 15 條。
+- **流程**：你讓 Claude 重複做過的多步驟做法，例如「發版：改版本號 → 更新 changelog → 打 tag → 建立 GitHub release」。流程不帶入新對話（讓 context 保持小），而是做成專案的 skill，見下方。
 
 筆記就是一個 Markdown 檔：`~/.claude/projects/<專案路徑>/memory/ctx-handoff.md`，可以直接改。
 
 **規則會移進你的 repo。** 一條規則出現 3 次、或守門已啟用後，下次在 git repo 裡開新對話，Claude 會先做完你交代的事，再把它放進專案存放規則的地方（AGENTS.md、CLAUDE.md 或現有的 hook）。Claude 會檢查有沒有重複、不會 commit，並在回覆最後用一句話說明加了什麼、加在哪，你看平常的 diff 就會看到。之後規則存在 repo 裡，換電腦、換工具都用得到，ctx-handoff 也不再帶入自己那份。不想要就直接說，Claude 會還原改動，之後不再提。同一條最多問兩次。
+
+**流程會變成專案的 skill。** 一個流程出現 3 次後，處理方式和規則一樣，只是 Claude 會把它建成 skill：`.claude/skills/<名稱>/SKILL.md`，`description` 寫什麼時候該用，內文依序列出步驟。如果已有 skill 或文件涵蓋同一個流程，Claude 會補充它，不另開重複的。Claude 不會 commit，會告訴你 skill 放在哪，ctx-handoff 也不在新對話帶入自己那份。不想要就直接說，Claude 會還原改動，之後不再提。
 
 整理只送上次之後的新對話給 Sonnet 5.5（effort low），短對話約 1,200 token、1.6 秒。像金鑰、密碼的內容不會寫進筆記。
 
@@ -194,7 +197,7 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 | `$.fs.read`、`$.fs.write`、`$.fs.exists` | 讀寫筆記檔與備份；確認專案是不是 git repo |
 | `$.prompt.submit`、`$.command.run` | 把摘要送進新對話；執行 `/clear` |
 | `$.env.get` | 讀三個環境變數 `CLAUDE_CONFIG_DIR`、`HOME`、`USERPROFILE`，只用來找到你的 `~/.claude` 資料夾，不需要另外設定 |
-| `$.tool.register` | 給 Claude 一個工具 `mark_in_project`，用來回報規則放進 repo 的哪裡 |
+| `$.tool.register` | 給 Claude 一個工具 `mark_in_project`，用來回報規則或流程放進 repo 的哪裡 |
 | `$.settings.read`、`$.config.list`、`config.set` | 讀 Claude Code 的 `language` 設定與這個 plugin 自己的設定（`pluginConfigs`）；你改設定時重新讀取 |
 | 其餘：`session.start`、`turn.complete`、`classic.Stop`、`command.run`、`$.command.register`、`ui.render`、`$.store`、`$.state`、`$.clock`、`$.ui`、`$.agent.list`、`$.session.*` | 日常運作：計時、`/handoff` 指令、狀態列、面板與提示、自己的儲存空間，交接前確認 Claude 和子代理都做完了，以及 Claude 說完成卻沒跑檢查時請它先驗證一次 |
 

@@ -93,10 +93,13 @@ What you correct or explain becomes notes for this project, loaded into each new
 
 - **Memories:** preferences, corrections, facts and locations. Preferences and corrections load in full (only if they match something you said); facts and locations load as titles, and Claude reads the rest when needed. Facts and locations unconfirmed for 30 days are archived: not loaded, not deleted.
 - **Rules:** recurring practices, e.g. "Use forward slashes in Bash paths (3 times)". Loaded once seen twice, up to 15.
+- **Procedures:** multi-step routines you had Claude repeat, e.g. "Release: bump the version → update the changelog → tag → publish the GitHub release". They are not loaded into new conversations (that keeps the context small); they become project skills instead, see below.
 
 The notes are one Markdown file you can edit: `~/.claude/projects/<project path>/memory/ctx-handoff.md`.
 
 **Rules move into your repo.** Once a rule has come up 3 times, or a guard is on, the next conversation started in a git repo asks Claude to put it where your project keeps its rules (AGENTS.md, CLAUDE.md or an existing hook), after it finishes what you asked. Claude checks for duplicates, doesn't commit, and ends its reply with one line saying what it added and where, so you see it with your usual diff. From then on the repo holds the rule: it works on any machine and with any tool, and ctx-handoff stops loading its own copy. If you don't want it, say so; Claude undoes the change and it won't be asked again. Each rule is asked about at most twice.
+
+**Procedures become project skills.** A procedure that has come up 3 times is handled the same way, except Claude creates a skill for it: `.claude/skills/<name>/SKILL.md`, with a `description` saying when to use it and the steps in order. If a skill or doc already covers the routine, Claude extends that instead of adding a duplicate. It doesn't commit, tells you where the skill went, and ctx-handoff keeps no copy in new conversations. Say no and it's undone and not asked again.
 
 Only new conversation since the last update goes to Sonnet 5.5 at low effort; a short one takes about 1,200 tokens and 1.6 seconds. Notes that look like a key or password are dropped.
 
@@ -196,7 +199,7 @@ Values outside the allowed range are pulled back into it. Cache keeping and proj
 | `$.fs.read`, `$.fs.write`, `$.fs.exists` | Reads and writes the notes file and its backups; checks whether the project is a git repo |
 | `$.prompt.submit`, `$.command.run` | Sends the summary into the new conversation; runs `/clear` |
 | `$.env.get` | Reads three environment variables, `CLAUDE_CONFIG_DIR`, `HOME` and `USERPROFILE`, only to find your `~/.claude` folder. Nothing needs to be set |
-| `$.tool.register` | Gives Claude one tool, `mark_in_project`, to report where it put a rule in your repo |
+| `$.tool.register` | Gives Claude one tool, `mark_in_project`, to report where it put a rule or procedure in your repo |
 | `$.settings.read`, `$.config.list`, `config.set` | Reads Claude Code's `language` setting and this plugin's own settings (`pluginConfigs`); rereads them when you change one |
 | The rest: `session.start`, `turn.complete`, `classic.Stop`, `command.run`, `$.command.register`, `ui.render`, `$.store`, `$.state`, `$.clock`, `$.ui`, `$.agent.list`, `$.session.*` | Bookkeeping: timers, the `/handoff` command, status line, panel and toasts, its own storage, checking that Claude and its subagents are done before a handoff, and asking Claude once to verify when it says "done" without having run a check |
 

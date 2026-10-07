@@ -1,4 +1,4 @@
-// 專案經驗檔：記憶與規則的型別、解析、輸出、封存分層與帶入新對話的文字（純函式，不碰 $）
+// 專案經驗檔：記憶、規則與流程的型別、解析、輸出、封存分層與帶入新對話的文字（純函式，不碰 $）
 
 export const tag = '[ctx-handoff]'
 // 新對話開頭帶入：偏好與修正（user／feedback）整條；事實與位置（project／reference）只帶標題，
@@ -10,9 +10,11 @@ const INJECT_RULES = 15
 export const EVIDENCE_KEEP = 3
 export const NOTE_TAG = '[ctx-handoff 專案經驗]'
 export type Rule = { name: string; count: number; body: string[] }
+// 流程：重複做過的多步驟固定做法。存法和規則同形（標題行＋body 行），欄位是 body 裡的「- 時機：」、「- 步驟：」＋縮排編號行、「- 根據：」、「- 專案：」
+export type Procedure = Rule
 export type Memory = { type: string; title: string; how?: string; why?: string; evidence: string[] }
-// extra：不認得的 `## ` 區段（含標題行）原樣保留，輸出在規則之後
-export type Notes = { memory: Memory[]; rules: Rule[]; extra: string[] }
+// extra：不認得的 `## ` 區段（含標題行）原樣保留，輸出在規則與流程之後
+export type Notes = { memory: Memory[]; rules: Rule[]; procedures: Procedure[]; extra: string[] }
 
 const MEM_FIELDS = { 做法: 'how', 理由: 'why' } as const
 // 經驗檔裡的一條記憶：標題行＋縮排的欄位行；evidence=false 給新對話帶入用
@@ -30,13 +32,26 @@ export const memOneLine = (m: Memory) =>
 export const ruleText = (r: Rule) =>
   (r.body.find(l => l.startsWith('- 規則：')) ?? r.body[0] ?? '').replace(/^- 規則：/, '').trim()
 
-// 規則的專案狀態：「- 專案：已在 <位置>」放進 repo 了（不再帶入，repo 的才是正本）；「- 專案：不放」使用者不要放進 repo
+// 流程的欄位：時機一行；步驟是「- 步驟：」下面縮排的編號行
+const WHEN_PREFIX = '- 時機：'
+const STEPS_PREFIX = '- 步驟：'
+const STEP_LINE = /^\s+\d+\. /
+export const procWhen = (p: Procedure) => p.body.find(l => l.startsWith(WHEN_PREFIX))?.slice(WHEN_PREFIX.length).trim() ?? ''
+export const procSteps = (p: Procedure) => p.body.filter(l => STEP_LINE.test(l)).map(l => l.replace(STEP_LINE, '').trim())
+// 時機與步驟以外的行（根據、專案），更新流程時原樣保留
+export const procRest = (p: Procedure) => p.body.filter(l => !l.startsWith(WHEN_PREFIX) && !l.startsWith(STEPS_PREFIX) && !STEP_LINE.test(l))
+export const procBody = (when: string, steps: string[], rest: string[]) =>
+  [`${WHEN_PREFIX}${when}`, STEPS_PREFIX, ...steps.map((s, i) => `  ${i + 1}. ${s}`), ...rest]
+
+export const procOneLine = (p: Procedure) => `時機：${procWhen(p)}｜步驟：${procSteps(p).join(' → ')}`
+
+// 規則與流程的專案狀態：「- 專案：已在 <位置>」放進 repo 了（不再帶入，repo 的才是正本）；「- 專案：不放」使用者不要放進 repo
 const PROJECT_PREFIX = '- 專案：'
 export const PROJECT_IN = '已在 '
 export const PROJECT_DECLINED = '不放'
-export const projectOf = (r: Rule) => r.body.find(l => l.startsWith(PROJECT_PREFIX))?.slice(PROJECT_PREFIX.length).trim()
-export const inProject = (r: Rule) => projectOf(r)?.startsWith(PROJECT_IN) === true
-export function setProject(r: Rule, value: string) {
+export const projectOf = (r: Rule | Procedure) => r.body.find(l => l.startsWith(PROJECT_PREFIX))?.slice(PROJECT_PREFIX.length).trim()
+export const inProject = (r: Rule | Procedure) => projectOf(r)?.startsWith(PROJECT_IN) === true
+export function setProject(r: Rule | Procedure, value: string) {
   r.body = [...r.body.filter(l => !l.startsWith(PROJECT_PREFIX)), `${PROJECT_PREFIX}${value}`]
 }
 
@@ -46,20 +61,20 @@ export function localStamp(ms: number) {
   return d.toISOString().slice(0, 16).replace('T', ' ')
 }
 
-// ---------- 專案經驗檔：一份 md，記憶與規則 ----------
+// ---------- 專案經驗檔：一份 md，記憶、規則與流程 ----------
 const NOTES_HEAD = '# ctx-handoff 專案經驗'
 const RULE_HEAD = /^### (.+?)（(\d+) 次）\s*$/
 
 export function parseNotes(text: string): Notes {
-  const notes: Notes = { memory: [], rules: [], extra: [] }
-  let section: 'memory' | 'rules' | 'extra' | undefined
+  const notes: Notes = { memory: [], rules: [], procedures: [], extra: [] }
+  let section: 'memory' | 'rules' | 'procedures' | 'extra' | undefined
   let rule: Rule | undefined
   // 記憶條目的延續行：緊接在 `- ` 行之後、非空白、不是 `- ` 也不是 `#` 的行，併入同一條
   let inItem = false
   for (const raw of text.split('\n')) {
     const line = raw.trimEnd()
     if (line.startsWith('## ')) {
-      section = line.startsWith('## 記憶') ? 'memory' : line.startsWith('## 規則') ? 'rules' : 'extra'
+      section = line.startsWith('## 記憶') ? 'memory' : line.startsWith('## 規則') ? 'rules' : line.startsWith('## 流程') ? 'procedures' : 'extra'
       rule = undefined
       inItem = false
       if (section === 'extra') notes.extra.push(line)
@@ -84,14 +99,15 @@ export function parseNotes(text: string): Notes {
         inItem = false
       }
     }
-    if (section !== 'rules') continue
+    if (section !== 'rules' && section !== 'procedures') continue
+    const list = section === 'rules' ? notes.rules : notes.procedures
     const head = RULE_HEAD.exec(line)
     if (head) {
       rule = { name: head[1] ?? '', count: Number(head[2]), body: [] }
-      notes.rules.push(rule)
+      list.push(rule)
     } else if (line.startsWith('### ')) {
       rule = { name: line.slice(4).trim(), count: 1, body: [] }
-      notes.rules.push(rule)
+      list.push(rule)
     } else if (rule && line.trim()) {
       rule.body.push(line)
     }
@@ -112,6 +128,8 @@ export function renderNotes(notes: Notes, stamp: string) {
     '',
     '## 規則',
     ...notes.rules.flatMap(r => ['', `### ${r.name}（${r.count} 次）`, ...r.body]),
+    // 沒有流程就不輸出這一段：沒有流程的舊檔照樣逐位元相同
+    ...(notes.procedures.length ? ['', '## 流程', ...notes.procedures.flatMap(p => ['', `### ${p.name}（${p.count} 次）`, ...p.body])] : []),
     ...(notes.extra.length ? ['', ...notes.extra] : []),
     '',
   ].join('\n')

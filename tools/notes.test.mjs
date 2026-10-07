@@ -55,3 +55,23 @@ test('比對到 0 條或多條：整批不寫', () => {
   assert.equal(read('B'), B)
   assert.ok(!existsSync(join(root, 'projects', 'A', 'memory', '.ctx-handoff-backup')))
 })
+
+// 流程（## 流程）：解析、原樣輸出、刪除，和 hooks/notes.ts 同規則
+const P = ['# ctx-handoff 專案經驗', '', '## 記憶', '- [user] 丁', '', '## 規則', '', '### 規則一（1 次）', '- 規則：做 X', '', '## 流程', '', '### 發版（3 次）', '- 時機：要發新版本時', '- 步驟：', '  1. 改版本號', '  2. 打 tag', '- 根據：某天', '', '### 備份（1 次）', '- 時機：每週', '', '## 自訂', '原樣保留', ''].join('\n')
+
+test('流程：沒有變動的套用原樣輸出；list 列出流程；刪除流程只動那一條', () => {
+  const { root, run, read } = setup()
+  mkdirSync(join(root, 'projects', 'P', 'memory'), { recursive: true })
+  writeFileSync(join(root, 'projects', 'P', 'memory', 'ctx-handoff.md'), P)
+  const env = { ...process.env, CLAUDE_CONFIG_DIR: root }
+  const listed = spawnSync(process.execPath, [tool, 'list', 'P'], { env, encoding: 'utf8' })
+  assert.match(listed.stdout, /P1 發版（3 次）/)
+  assert.match(listed.stdout, /P2 備份（1 次）/)
+  assert.equal(spawnSync(process.execPath, [tool, 'roundtrip'], { env, encoding: 'utf8' }).stdout.includes('DIFF P'), false)
+  assert.equal(run([{ file: 'P', mem: '丁', op: 'append', text: '補' }, { file: 'P', mem: '丁', op: 'cut', cut: '。補' }], true).status, 0)
+  assert.equal(read('P'), P)
+  const r = run([{ file: 'P', proc: '備份', op: 'delete' }], true)
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(read('P'), P.replace('### 備份（1 次）\n- 時機：每週\n\n', ''))
+  assert.match(r.stdout, /流程 2 → 1/)
+})

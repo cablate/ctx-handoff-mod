@@ -1,6 +1,6 @@
 // /handoff 的狀態文字：交接、整理、守門各一段（純函式，不碰 $；資料由 register.ts 讀好傳進來）
 import { t } from './i18n'
-import { INJECT_MIN_COUNT, STALE_DAYS, memoryTiers } from './notes'
+import { INJECT_MIN_COUNT, STALE_DAYS, inProject, memoryTiers } from './notes'
 import type { Notes } from './notes'
 import { DISTILL_EVERY, cfg, thresholdOf } from './config'
 import { rt } from './runtime'
@@ -60,5 +60,6 @@ export function distillStatusText(s: DistillStatusInput) {
     ...(err && (!d || err.at >= d.at) ? [`${ind}${m.distillStatus.failed(new Date(err.at).toLocaleString(), err.why, err.reason)}`] : []),
     `${ind}${m.distillStatus.notes(file, notes.memory.length, notes.rules.length, notes.rules.filter(r => r.count >= INJECT_MIN_COUNT).length)}`,
     `${ind}${m.distillStatus.tiers(tiers.full, tiers.titles, tiers.archived, STALE_DAYS)}`,
+    ...(notes.procedures.length ? [`${ind}${m.distillStatus.procedures(notes.procedures.length, notes.procedures.filter(inProject).length)}`] : []),
   ].join('\n')
 }

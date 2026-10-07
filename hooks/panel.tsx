@@ -174,17 +174,28 @@ export function panelTree(ui: Elements, v: PanelView, act: PanelActions) {
     </Box>
   )
 
+  // 規則與流程同一種列：次數、名稱、已在哪；流程接在規則下面
+  const countRow = (prefix: 'r' | 'p', r: { name: string; count: number; project?: string }) => (
+    <Box key={`${prefix}:${r.name}`}>
+      <Box flexGrow={1}>
+        <Text>{badge(m.ruleCount(r.count).padStart(4), r.count >= 3 ? 'green' : r.count >= 2 ? ACCENT : 'gray')} {fit(r.name, short - 6 - (r.project ? m.inProject(r.project).length + 3 : 0))}{r.project ? <Text dimColor> · {m.inProject(r.project)}</Text> : null}</Text>
+      </Box>
+      {dropButtons(`${prefix}:${r.name}`)}
+    </Box>
+  )
+
   const rulesTab = (
     <Box flexDirection="column">
       {v.rules.length === 0 ? empty(m.noRules) : null}
-      {v.rules.map(r => (
-        <Box key={`r:${r.name}`}>
-          <Box flexGrow={1}>
-            <Text>{badge(m.ruleCount(r.count).padStart(4), r.count >= 3 ? 'green' : r.count >= 2 ? ACCENT : 'gray')} {fit(r.name, short - 6 - (r.project ? m.inProject(r.project).length + 3 : 0))}{r.project ? <Text dimColor> · {m.inProject(r.project)}</Text> : null}</Text>
+      {v.rules.map(r => countRow('r', r))}
+      {v.procedures.length
+        ? (
+          <Box flexDirection="column" marginTop={1}>
+            <Text dimColor>{fit(m.proceduresHint(v.procedures.length), inner)}</Text>
+            {v.procedures.map(p => countRow('p', p))}
           </Box>
-          {dropButtons(`r:${r.name}`)}
-        </Box>
-      ))}
+        )
+        : null}
     </Box>
   )
 

@@ -20,6 +20,7 @@ export function panelSnapshot(file: string, notes: Notes, guards: Guard[], d: Di
     archived: notes.memory.filter(m => isArchived(m, today)).map(memHead),
     staleDays: STALE_DAYS,
     rules: [...notes.rules].sort((a, b) => b.count - a.count).map(r => ({ name: r.name, count: r.count, ...(projectOf(r) ? { project: projectOf(r) } : {}) })),
+    procedures: [...notes.procedures].sort((a, b) => b.count - a.count).map(p => ({ name: p.name, count: p.count, ...(projectOf(p) ? { project: projectOf(p) } : {}) })),
   }
 }
 
@@ -28,13 +29,16 @@ export function keepMemory(m: Memory, day: string) {
   m.evidence = [...m.evidence, `${day}｜在面板確認留下`].slice(-EVIDENCE_KEEP)
 }
 
-// 刪一條記憶（m:<原文>）或規則（r:<名稱>）；找不到回 undefined
+// 刪一條記憶（m:<原文>）、規則（r:<名稱>）或流程（p:<名稱>）；找不到回 undefined
 export function withoutNote(notes: Notes, key: string) {
   const target = key.slice(2)
   const updated = key.startsWith('m:')
     ? { ...notes, memory: notes.memory.filter(m => memHead(m) !== target) }
-    : { ...notes, rules: notes.rules.filter(r => r.name !== target) }
-  if (updated.memory.length + updated.rules.length === notes.memory.length + notes.rules.length) return undefined
+    : key.startsWith('p:')
+      ? { ...notes, procedures: notes.procedures.filter(p => p.name !== target) }
+      : { ...notes, rules: notes.rules.filter(r => r.name !== target) }
+  const total = (n: Notes) => n.memory.length + n.rules.length + n.procedures.length
+  if (total(updated) === total(notes)) return undefined
   return { updated, target }
 }
 

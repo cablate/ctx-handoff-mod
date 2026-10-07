@@ -107,6 +107,7 @@ const zh = {
     failed: (at: string, why: string, reason: string) => `上次失敗：${at}・${why}・${reason}`,
     notes: (file: string, memory: number, rules: number, injected: number) =>
       `工作區經驗：${file}（記憶 ${memory} 條、規則 ${rules} 條，帶入新對話的規則 ${injected} 條）`,
+    procedures: (n: number, inProject: number) => `工作區流程：${n} 條（已放進專案 skill 或文件 ${inProject} 條；流程不帶入新對話）`,
     tiers: (full: number, titles: number, archived: number, days: number) =>
       `記憶帶入：偏好與修正 ${full} 條整條、事實與位置 ${titles} 條只帶標題、封存 ${archived} 條（超過 ${days} 天沒被證實，不帶入）`,
   },
@@ -216,8 +217,8 @@ const zh = {
     busyDrop: '背景整理進行中，稍後再刪',
     notFound: '找不到這一條，經驗檔可能剛被改過',
     kept: (title: string) => `已留下：${title}（恢復帶入新對話）`,
-    deleted: (isMemory: boolean, name: string, dir: string) =>
-      `已刪除${isMemory ? '記憶' : `規則「${name}」`}（原檔已備份到 ${dir}/.ctx-handoff-backup/）`,
+    deleted: (kind: 'm' | 'r' | 'p', name: string, dir: string) =>
+      `已刪除${kind === 'm' ? '記憶' : kind === 'r' ? `規則「${name}」` : `流程「${name}」`}（原檔已備份到 ${dir}/.ctx-handoff-backup/）`,
   },
 
   // 整理的變動（寫進紀錄、toast、面板，也會跟著下一則訊息帶入）
@@ -230,6 +231,10 @@ const zh = {
     confirmRule: (name: string, count: number) => `規則確認：${name} → 出現 ${count} 次`,
     updateRule: (name: string) => `更新規則：${name}`,
     deleteRule: (name: string) => `刪除規則：${name}`,
+    addProcedure: (name: string, steps: number) => `新流程：${name}（${steps} 步，出現 1 次）`,
+    confirmProcedure: (name: string, count: number) => `流程確認：${name} → 出現 ${count} 次`,
+    updateProcedure: (name: string) => `更新流程：${name}`,
+    deleteProcedure: (name: string) => `刪除流程：${name}`,
   },
 
   // 整理輸出被丟棄的原因（記進樣本，/handoff 看得到）
@@ -243,6 +248,7 @@ const zh = {
     quoteNotFound: 'quote 不在使用者訊息裡',
     quoteMissing: (type: string) => `${type} 類缺少使用者原話 quote`,
     badOp: (op: string) => `不認得的 op（${op}）`,
+    badSteps: (min: number, max: number) => `steps 要是 ${min} 到 ${max} 個非空字串`,
     noMarker: (marker: string) => `找不到 ${marker} 標記`,
     badJson: (msg: string) => `JSON 格式錯誤（${msg}）`,
     notObject: '不是 JSON 物件',
@@ -339,6 +345,7 @@ const zh = {
     archived: (n: number, days: number) => `封存 ${n} 條：超過 ${days} 天沒被證實，不帶入新對話`,
     noRules: '還沒有規則',
     ruleCount: (n: number) => `${n} 次`,
+    proceduresHint: (n: number) => `流程 ${n} 條・不帶入新對話，出現 3 次以上會請 AI 做成專案的 skill`,
     inProject: (project: string) => (project.startsWith('已在 ') ? `已在 ${project.slice(3)}` : '不放進專案'),
     distillLine: (at: string, why: string, n: number) => `${at}・${why}・${n} 項變動`,
     noDistill: '還沒有整理紀錄',
@@ -428,6 +435,7 @@ const en: Messages = {
     failed: (at, why, reason) => `Last failure: ${at} · ${why} · ${reason}`,
     notes: (file, memory, rules, injected) =>
       `Workspace notes: ${file} (${memory} memor${memory === 1 ? 'y' : 'ies'}, ${rules} rule${s(rules)}, ${injected} rule${s(injected)} carried into new conversations)`,
+    procedures: (n, inProject) => `Workspace procedures: ${n} (${inProject} already in a project skill or doc; procedures are not carried into new conversations)`,
     tiers: (full, titles, archived, days) =>
       `Memories carried in: ${full} preference${s(full)} and correction${s(full)} in full, ${titles} fact${s(titles)} and location${s(titles)} as titles only, ${archived} archived (not confirmed for over ${days} days, not carried in)`,
   },
@@ -529,8 +537,8 @@ const en: Messages = {
     busyDrop: 'Notes are being updated, try deleting again in a moment',
     notFound: 'Could not find this entry. The notes file may have just been edited',
     kept: title => `Kept: ${title} (carried into new conversations again)`,
-    deleted: (isMemory, name, dir) =>
-      `Deleted ${isMemory ? 'the memory' : `the rule "${name}"`} (original backed up to ${dir}/.ctx-handoff-backup/)`,
+    deleted: (kind, name, dir) =>
+      `Deleted ${kind === 'm' ? 'the memory' : kind === 'r' ? `the rule "${name}"` : `the procedure "${name}"`} (original backed up to ${dir}/.ctx-handoff-backup/)`,
   },
 
   change: {
@@ -542,6 +550,10 @@ const en: Messages = {
     confirmRule: (name, count) => `Rule confirmed: ${name} → seen ${count} times`,
     updateRule: name => `Updated rule: ${name}`,
     deleteRule: name => `Deleted rule: ${name}`,
+    addProcedure: (name, steps) => `New procedure: ${name} (${steps} steps, seen 1 time)`,
+    confirmProcedure: (name, count) => `Procedure confirmed: ${name} → seen ${count} times`,
+    updateProcedure: name => `Updated procedure: ${name}`,
+    deleteProcedure: name => `Deleted procedure: ${name}`,
   },
 
   reject: {
@@ -554,6 +566,7 @@ const en: Messages = {
     quoteNotFound: 'quote is not in the user\'s messages',
     quoteMissing: type => `${type} entries need a quote from the user`,
     badOp: op => `unknown op (${op})`,
+    badSteps: (min, max) => `steps must be ${min} to ${max} non-empty strings`,
     noMarker: marker => `${marker} marker not found`,
     badJson: msg => `invalid JSON (${msg})`,
     notObject: 'not a JSON object',
@@ -645,6 +658,7 @@ const en: Messages = {
     archived: (n, days) => `${n} archived: not confirmed for over ${days} days, not carried into new conversations`,
     noRules: 'No rules yet',
     ruleCount: n => `${n}x`,
+    proceduresHint: n => `${n} procedure${s(n)} · not carried into new conversations; at 3+ times the AI is asked to turn them into project skills`,
     inProject: project => (project.startsWith('已在 ') ? `in ${project.slice(3)}` : 'kept out of the repo'),
     distillLine: (at, why, n) => `${at} · ${why} · ${n} change${s(n)}`,
     noDistill: 'No notes updates yet',

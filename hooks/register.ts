@@ -627,7 +627,7 @@ async function dropNote($: EngineInterface, key: string) {
   const dir = file.slice(0, file.lastIndexOf('/'))
   await $.fs.write(backupPath(dir, now), original)
   await $.fs.write(file, renderNotes(removed.updated, localStamp(now)))
-  return t().panelCmd.deleted(key.startsWith('m:'), removed.target, dir)
+  return t().panelCmd.deleted(key.startsWith('m:') ? 'm' : key.startsWith('p:') ? 'p' : 'r', removed.target, dir)
 }
 
 // ---------- 進度備忘：整理順手留下「停在哪」，下一段對話開頭提供一次（型別、文字在 progress.ts） ----------

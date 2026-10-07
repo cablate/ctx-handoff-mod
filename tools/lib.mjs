@@ -1,4 +1,4 @@
-// 工具共用：Claude 設定目錄、經驗檔解析與帶入量估算（和 hooks/notes.ts 的 parseNotes／contextText 同規則）
+// 工具共用：Claude 設定目錄、經驗檔解析（記憶、規則、流程）與帶入量估算（和 hooks/notes.ts 的 parseNotes／contextText 同規則）
 import { homedir } from 'node:os'
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -8,12 +8,12 @@ export const claudeDir = () => (process.env.CLAUDE_CONFIG_DIR || join(homedir(),
 export const NOTES_NAME = 'ctx-handoff.md'
 
 export function parseNotes(text) {
-  const notes = { memory: [], rules: [], extra: [] }
+  const notes = { memory: [], rules: [], procedures: [], extra: [] }
   let section, rule, inItem = false
   for (const raw of text.replace(/\r/g, '').split('\n')) {
     const line = raw.trimEnd()
     if (line.startsWith('## ')) {
-      section = line.startsWith('## 記憶') ? 'memory' : line.startsWith('## 規則') ? 'rules' : 'extra'
+      section = line.startsWith('## 記憶') ? 'memory' : line.startsWith('## 規則') ? 'rules' : line.startsWith('## 流程') ? 'procedures' : 'extra'
       rule = undefined
       inItem = false
       if (section === 'extra') notes.extra.push(line)
@@ -25,10 +25,11 @@ export function parseNotes(text) {
       else if (inItem && line.trim() && !line.startsWith('#')) notes.memory[notes.memory.length - 1] += `\n${line}`
       else inItem = false
     }
-    if (section !== 'rules') continue
+    if (section !== 'rules' && section !== 'procedures') continue
+    const list = section === 'rules' ? notes.rules : notes.procedures
     const head = /^### (.+?)（(\d+) 次）\s*$/.exec(line)
-    if (head) { rule = { name: head[1], count: Number(head[2]), body: [] }; notes.rules.push(rule) }
-    else if (line.startsWith('### ')) { rule = { name: line.slice(4).trim(), count: 1, body: [] }; notes.rules.push(rule) }
+    if (head) { rule = { name: head[1], count: Number(head[2]), body: [] }; list.push(rule) }
+    else if (line.startsWith('### ')) { rule = { name: line.slice(4).trim(), count: 1, body: [] }; list.push(rule) }
     else if (rule && line.trim()) rule.body.push(line)
   }
   while (notes.extra.at(-1) === '') notes.extra.pop()
