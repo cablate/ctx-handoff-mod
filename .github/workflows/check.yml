@@ -10,15 +10,21 @@ permissions:
 
 jobs:
   check:
-    # 測試資料用 Windows 路徑（C:/Users/u/...），在 Linux 上對不到筆記檔
-    runs-on: windows-latest
-    env:
-      CLAUDE_CODE_GIT_BASH_PATH: C:\Program Files\Git\bin\bash.exe
+    name: check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
+      - name: Point Claude Code at Git Bash
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo 'CLAUDE_CODE_GIT_BASH_PATH=C:\Program Files\Git\bin\bash.exe' >> "$GITHUB_ENV"
       - run: npm install -g @anthropic-ai/claude-code
       - run: claude --version
       - name: Validate the plugin

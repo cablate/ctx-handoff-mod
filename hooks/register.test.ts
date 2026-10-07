@@ -42,6 +42,8 @@ let curSid = 'S1'
 // session 啟動資料夾（P1）與目前工作目錄
 let curRoot = 'C:\\proj'
 let curCwd = 'C:/proj'
+// $.env.get 的回答；world() 重設成 Windows 環境，POSIX 的測試在 world() 之後改它
+let envVars: Record<string, string> = { USERPROFILE: 'C:\\Users\\u' }
 
 // 引擎底下的世界：用量、fork、/clear、送出、檔案，全部記下來
 const world = (on: On, tokens: number, window = 1_000_000, store: Record<string, unknown> = {}, agents: { id: string; status: string }[] = [], turns: number | (() => number) = 0,
@@ -74,6 +76,7 @@ const world = (on: On, tokens: number, window = 1_000_000, store: Record<string,
   curSid = 'S1'
   curRoot = 'C:\\proj'
   curCwd = 'C:/proj'
+  envVars = { USERPROFILE: 'C:\\Users\\u' }
   const clock = mock.clock(on)
   on('ui.log', (_$, e: unknown) => { logs.push(JSON.stringify(e)); return { value: undefined } })
   const statuses: (string | undefined)[] = []
@@ -87,7 +90,7 @@ const world = (on: On, tokens: number, window = 1_000_000, store: Record<string,
   on('store.keys', () => ({ value: [...kv.keys()] }))
   const get = (key: string) => kv.get(key)
   const put = (key: string, value: unknown) => { kv.set(key, value) }
-  mock.env(on, { USERPROFILE: 'C:\\Users\\u' })
+  on('env.get', (_$, e: { name: string }) => ({ value: envVars[e.name] }))
   on('settings.read', () => ({ value: { language } }) as never)
   on('session.id', () => ({ value: curSid }))
   on('session.turns', () => ({ value: turnsOf() }))
@@ -97,8 +100,9 @@ const world = (on: On, tokens: number, window = 1_000_000, store: Record<string,
   on('session.cwd', () => ({ value: curCwd }))
   // 工具本身：什麼都不做，只讓 tool.call 能走到本 plugin 的 hook
   on('tool.call', () => ({ result: 'ok' }))
-  // 引擎會把路徑轉成原生格式（Windows 反斜線），比對前先統一成斜線
-  const norm = (p: string) => p.split(String.fromCharCode(92)).join('/')
+  // 引擎會把路徑轉成原生格式（Windows 反斜線），比對前先統一成斜線。
+  // POSIX 上引擎把 C:/... 當相對路徑，前面接工作目錄（/w/C:/...）；測試資料用 Windows 路徑，所以去掉磁碟代號前面的部分；反過來，Windows 上引擎替 /home/... 這種 POSIX 路徑補上磁碟代號（C:/home/...），也去掉
+  const norm = (p: string) => p.split(String.fromCharCode(92)).join('/').replace(/^.*?\/(?=[A-Za-z]:\/)/, '').replace(/^[A-Za-z]:(?=\/(?:home|opt)\/)/, '')
   on('fs.exists', (_$, e: { path: string }) => ({ value: files.has(norm(e.path)) }))
   on('fs.list', (_$, e: { path: string }) => {
     const dir = `${norm(e.path).replace(/\/+$/, '')}/`
@@ -1457,6 +1461,50 @@ test('worktree 的 gitdir 是相對路徑：仍對到主工作樹', async ($, on
   await distillNow($)
   expect(w.files.get(MAIN_NOTES) ?? '').toContain('使用者決定交接門檻維持 600k')
   expect(w.get('distill:last:C--main')).toBeDefined()
+})
+
+// ---------- POSIX 路徑（Linux／macOS）：HOME=/home/u、工作區 /home/u/proj ----------
+// 其他測試用 Windows 路徑；這幾個確保 /home/... 也對得到經驗檔，不依賴磁碟代號
+const POSIX_PROJECTS = '/home/u/.claude/projects'
+const posixWorld = (on: On) => {
+  const w = world(on, 100_000, 1_000_000, {}, [], 5)
+  envVars = { HOME: '/home/u' }
+  curRoot = '/home/u/proj'
+  curCwd = '/home/u/proj'
+  return w
+}
+
+test('POSIX：經驗檔在 <HOME>/.claude/projects/<-home-u-proj>/memory，整理寫進去', async ($, on) => {
+  const w = posixWorld(on)
+  await distillNow($)
+  expect(w.files.get(`${POSIX_PROJECTS}/-home-u-proj/memory/ctx-handoff.md`) ?? '').toContain('使用者決定交接門檻維持 600k')
+  expect(w.get('distill:last:-home-u-proj')).toBeDefined()
+})
+
+test('POSIX：CLAUDE_CONFIG_DIR 優先於 HOME', async ($, on) => {
+  const w = posixWorld(on)
+  envVars = { HOME: '/home/u', CLAUDE_CONFIG_DIR: '/opt/claude-cfg' }
+  await distillNow($)
+  expect(w.files.get('/opt/claude-cfg/projects/-home-u-proj/memory/ctx-handoff.md') ?? '').toContain('使用者決定交接門檻維持 600k')
+})
+
+test('POSIX：從 git worktree 啟動，經驗檔跟著主工作樹（絕對路徑 gitdir）', async ($, on) => {
+  const w = posixWorld(on)
+  const MAIN_NOTES = `${POSIX_PROJECTS}/-home-u-main/memory/ctx-handoff.md`
+  w.files.set('/home/u/proj/.git', 'gitdir: /home/u/main/.git/worktrees/feat\n')
+  w.files.set(MAIN_NOTES, EXISTING)
+  await distillNow($)
+  expect(w.files.get(MAIN_NOTES) ?? '').toContain('使用者決定交接門檻維持 600k')
+  expect(w.files.has(`${POSIX_PROJECTS}/-home-u-proj/memory/ctx-handoff.md`)).toBe(false)
+})
+
+test('POSIX：worktree 的 gitdir 是相對路徑，仍對到主工作樹', async ($, on) => {
+  const w = posixWorld(on)
+  const MAIN_NOTES = `${POSIX_PROJECTS}/-home-u-main/memory/ctx-handoff.md`
+  w.files.set('/home/u/proj/.git', 'gitdir: ../main/.git/worktrees/feat\n')
+  w.files.set(MAIN_NOTES, EXISTING)
+  await distillNow($)
+  expect(w.files.get(MAIN_NOTES) ?? '').toContain('使用者決定交接門檻維持 600k')
 })
 
 test('整理有變動：跳出提示，寫出項數與經驗檔的完整路徑；沒有變動不提示', async ($, on) => {
