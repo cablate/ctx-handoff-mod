@@ -3,6 +3,8 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 import type { PanelData, PanelUi } from '../types'
 import { panelTree } from './panel'
 import type { PanelActions } from './panel'
+import { isChinese, setLang, t } from './i18n'
+import type { Lang } from './i18n'
 
 const tag = '[ctx-handoff]'
 
@@ -29,6 +31,9 @@ const DISTILL_MAX_TOKENS = 32_000
 const TRANSCRIPT_MAX_CHARS = 300_000
 const TOOL_INPUT_CHARS = 300
 const TOOL_RESULT_CHARS = 500
+// 介面語言（狀態列、toast、紀錄、指令回覆、面板）：auto 依序看 Claude Code 的 language 設定、
+// LC_ALL／LC_MESSAGES／LANG、系統語系，zh 開頭用繁體中文，其餘英文；也可以直接指定。給模型的提示與經驗檔格式不受影響
+const UI_LANG: 'auto' | Lang = 'auto'
 
 const HANDOFF_PROMPT = [
   '為接手這段工作的新對話寫一份 handoff，第一行寫「HANDOFF:」加一句話的目標，全文不超過 1500 字。',
@@ -242,8 +247,8 @@ function isQuoted(quote: string, userText: string) {
 
 // 超過上限的欄位名稱（中英文都算一個字）
 const tooLong = (fields: Record<string, [string | undefined, number]>) => {
-  const over = Object.entries(fields).filter(([, [v, max]]) => v !== undefined && [...v].length > max).map(([k, [, max]]) => `${k} 超過 ${max} 字`)
-  return over.length ? over.join('、') : undefined
+  const over = Object.entries(fields).filter(([, [v, max]]) => v !== undefined && [...v].length > max).map(([k, [, max]]) => t().reject.over(k, max))
+  return over.length ? over.join(t().reject.overJoin) : undefined
 }
 
 // 一行 JSON 轉成動作；無效時回傳原因（記進丟棄樣本，事後查得出是哪一種）
@@ -251,16 +256,16 @@ const tooLong = (fields: Record<string, [string | undefined, number]>) => {
 function toAction(o: Record<string, unknown>, notes: Notes, userText: string): Action | string {
   const ref = (kind: 'M' | 'R') => {
     const m = typeof o.id === 'string' ? /^([MR])(\d+)$/.exec(o.id) : null
-    if (!m || m[1] !== kind) return `id 不是 ${kind}#`
+    if (!m || m[1] !== kind) return t().reject.idNot(kind)
     const i = Number(m[2]) - 1
     const len = kind === 'M' ? notes.memory.length : notes.rules.length
-    return i >= 0 && i < len ? { i } : `沒有編號 ${o.id}`
+    return i >= 0 && i < len ? { i } : t().reject.noId(String(o.id))
   }
   const type = typeof o.type === 'string' && MEMORY_TYPES.includes(o.type) ? o.type : undefined
-  const needType = () => (type ? undefined : `type 無效（${String(o.type)}）`)
+  const needType = () => (type ? undefined : t().reject.badType(String(o.type)))
   const missing = (fields: Record<string, string | undefined>) => {
     const names = Object.entries(fields).filter(([, v]) => !v).map(([k]) => k)
-    return names.length ? `缺少 ${names.join('、')}` : undefined
+    return names.length ? t().reject.missing(names.join(t().reject.overJoin)) : undefined
   }
   // 記憶的欄位：長度上限；user／feedback 的原話要在使用者訊息裡找得到（已有原話的舊條目更新時可省略）
   const memory = (hasQuote: boolean) => {
@@ -268,8 +273,8 @@ function toAction(o: Record<string, unknown>, notes: Notes, userText: string): A
     const bad = needType() ?? missing({ title })
       ?? tooLong({ title: [title, TITLE_MAX], how: [how, FIELD_MAX], why: [why, FIELD_MAX], evidence: [evidence, EVIDENCE_MAX], quote: [quote, QUOTE_MAX] })
     if (bad) return bad
-    if (quote !== undefined && !isQuoted(quote, userText)) return 'quote 不在使用者訊息裡'
-    if (QUOTE_TYPES.includes(type!) && quote === undefined && !hasQuote) return `${type} 類缺少使用者原話 quote`
+    if (quote !== undefined && !isQuoted(quote, userText)) return t().reject.quoteNotFound
+    if (QUOTE_TYPES.includes(type!) && quote === undefined && !hasQuote) return t().reject.quoteMissing(type!)
     return { type: type!, title: title!, ...(how ? { how } : {}), ...(why ? { why } : {}), ...(evidence ? { evidence } : {}), ...(quote ? { quote } : {}) }
   }
   switch (o.op) {
@@ -290,7 +295,7 @@ function toAction(o: Record<string, unknown>, notes: Notes, userText: string): A
       const [evidence, quote] = [o.evidence, o.quote].map(str)
       const bad = missing({ evidence }) ?? tooLong({ evidence: [evidence, EVIDENCE_MAX], quote: [quote, QUOTE_MAX] })
       if (bad) return bad
-      if (quote !== undefined && !isQuoted(quote, userText)) return 'quote 不在使用者訊息裡'
+      if (quote !== undefined && !isQuoted(quote, userText)) return t().reject.quoteNotFound
       return { op: 'confirm_memory', ...r, evidence: evidence!, ...(quote ? { quote } : {}) }
     }
     case 'delete_memory': {
@@ -323,7 +328,7 @@ function toAction(o: Record<string, unknown>, notes: Notes, userText: string): A
       return missing({ reason: str(o.reason) }) ?? { op: 'delete_rule', ...r }
     }
     default:
-      return `不認得的 op（${String(o.op)}）`
+      return t().reject.badOp(String(o.op))
   }
 }
 
@@ -336,7 +341,7 @@ const hasSecret = (v: unknown): boolean =>
 
 // 丟棄樣本：原因＋行的頭尾（JSON 壞掉的地方常在後段）
 const sampleOf = (why: string, line: string) =>
-  `${why}：${line.length > 160 ? `${line.slice(0, 100)}…${line.slice(-50)}` : line}`
+  t().reject.sample(why, line.length > 160 ? `${line.slice(0, 100)}…${line.slice(-50)}` : line)
 
 // 只解析兩個標記之間的行，一行一個 JSON；無效的行丟棄並記數與最多 3 個樣本（含原因）。
 // 疑似金鑰的行整行丟棄，樣本不記內容（樣本會寫進 store）
@@ -346,11 +351,11 @@ function parseActions(text: string, notes: Notes, userText = ''): { actions: Act
   // secret：解析後的值疑似金鑰。值可能是跳脫寫法（\u0073k-…），原始行比對不到，所以不能只靠再比對一次
   const reject = (why: string, line = '', secret = false) => {
     rejected.count += 1
-    if (rejected.samples.length < 3) rejected.samples.push(secret || SECRETISH.test(line) ? `${why}：（內容不記錄）` : sampleOf(why, line))
+    if (rejected.samples.length < 3) rejected.samples.push(secret || SECRETISH.test(line) ? t().reject.sample(why, t().reject.noRecord) : sampleOf(why, line))
   }
   const start = text.indexOf(ACTIONS_START)
   if (start === -1) {
-    if (text.trim()) reject(`找不到 ${ACTIONS_START} 標記`)
+    if (text.trim()) reject(t().reject.noMarker(ACTIONS_START))
     return { actions, rejected }
   }
   let body = text.slice(start + ACTIONS_START.length)
@@ -360,10 +365,10 @@ function parseActions(text: string, notes: Notes, userText = ''): { actions: Act
     // 空行與模型順手包上的程式碼圍欄不算無效輸出
     if (!line || line.startsWith('```')) continue
     let o: unknown
-    try { o = JSON.parse(line) } catch (err) { reject(`JSON 格式錯誤（${(err instanceof Error ? err.message : String(err)).slice(0, 60)}）`, line); continue }
-    if (!o || typeof o !== 'object' || Array.isArray(o)) { reject('不是 JSON 物件', line); continue }
+    try { o = JSON.parse(line) } catch (err) { reject(t().reject.badJson((err instanceof Error ? err.message : String(err)).slice(0, 60)), line); continue }
+    if (!o || typeof o !== 'object' || Array.isArray(o)) { reject(t().reject.notObject, line); continue }
     const rec = o as Record<string, unknown>
-    if (hasSecret(rec)) { reject('疑似金鑰', '', true); continue }
+    if (hasSecret(rec)) { reject(t().reject.secret, '', true); continue }
     const a = toAction(rec, notes, userText)
     if (typeof a === 'string') reject(a, line)
     else actions.push(a)
@@ -394,7 +399,7 @@ function applyActions(actions: Action[], n: Notes, day: string, sid = ''): { not
           type: a.type, title: a.title, ...(a.how ? { how: a.how } : {}), ...(a.why ? { why: a.why } : {}), evidence: [evidenceOf(a)!],
         }
         // 同標題已存在：略過
-        if (!memory.some(sameTitle(item)) && !addedMem.some(sameTitle(item))) { addedMem.push(item); changes.push(`新增記憶：${memHead(item)}`) }
+        if (!memory.some(sameTitle(item)) && !addedMem.some(sameTitle(item))) { addedMem.push(item); changes.push(t().change.addMemory(memHead(item))) }
         break
       }
       case 'update_memory': {
@@ -406,19 +411,19 @@ function applyActions(actions: Action[], n: Notes, day: string, sid = ''): { not
           evidence: (e ? [...old.evidence, e] : old.evidence).slice(-EVIDENCE_KEEP),
         }
         memory[a.i] = item
-        changes.push(`更新記憶：${memHead(item)}`)
+        changes.push(t().change.updateMemory(memHead(item)))
         break
       }
       case 'confirm_memory': {
         const m = memory[a.i]
         if (m === undefined) break
         m.evidence = [...m.evidence, evidenceOf({ type: m.type, title: m.title, ...a })!].slice(-EVIDENCE_KEEP)
-        changes.push(`記憶確認：${memHead(m)}`)
+        changes.push(t().change.confirmMemory(memHead(m)))
         break
       }
       case 'delete_memory': {
         const m = memory[a.i]
-        if (m !== undefined) { changes.push(`刪除記憶：${memHead(m)}`); memory[a.i] = undefined }
+        if (m !== undefined) { changes.push(t().change.deleteMemory(memHead(m))); memory[a.i] = undefined }
         break
       }
       case 'add_rule': {
@@ -429,7 +434,7 @@ function applyActions(actions: Action[], n: Notes, day: string, sid = ''): { not
           count: 1,
           body: [field('規則', a.rule), field('適用', `${a.applies}｜不適用：${a.notApplies}`), field('根據', `${day} ${a.evidence}`)],
         })
-        changes.push(`新規則：${a.name}（出現 1 次）：${a.rule}`)
+        changes.push(t().change.addRule(a.name, a.rule))
         break
       }
       case 'confirm_rule': {
@@ -438,7 +443,7 @@ function applyActions(actions: Action[], n: Notes, day: string, sid = ''): { not
         r.count += 1
         const evidence = r.body.filter(l => l.startsWith('- 根據：'))
         r.body = [...r.body.filter(l => !l.startsWith('- 根據：')), ...[...evidence, field('根據', `${day} ${a.evidence}`)].slice(-EVIDENCE_KEEP)]
-        changes.push(`規則確認：${r.name} → 出現 ${r.count} 次`)
+        changes.push(t().change.confirmRule(r.name, r.count))
         break
       }
       case 'update_rule': {
@@ -447,12 +452,12 @@ function applyActions(actions: Action[], n: Notes, day: string, sid = ''): { not
         const k = r.body.findIndex(l => l.startsWith('- 規則：'))
         if (k === -1) r.body.unshift(field('規則', a.rule))
         else r.body[k] = field('規則', a.rule)
-        changes.push(`更新規則：${r.name}`)
+        changes.push(t().change.updateRule(r.name))
         break
       }
       case 'delete_rule': {
         const r = rules[a.i]
-        if (r) { changes.push(`刪除規則：${r.name}`); rules[a.i] = undefined }
+        if (r) { changes.push(t().change.deleteRule(r.name)); rules[a.i] = undefined }
         break
       }
     }
@@ -505,9 +510,8 @@ type Saved = { at: number; sessionId: string; kind: Kind; tokens: number | null;
 function describeUsage(u: Usage) {
   const total = u.input + u.cacheRead + u.cacheCreation
   const ratio = total === 0 ? 0 : (u.cacheRead / total) * 100
-  return `輸入 ${total.toLocaleString('en-US')}（快取讀 ${u.cacheRead.toLocaleString('en-US')} = ${ratio.toFixed(2)}%，` +
-    `寫入 ${u.cacheCreation.toLocaleString('en-US')}，未快取 ${u.input.toLocaleString('en-US')}）` +
-    `・輸出 ${u.output.toLocaleString('en-US')}・${(u.ms / 1000).toFixed(1)}s`
+  const n = (v: number) => v.toLocaleString('en-US')
+  return t().usage(n(total), n(u.cacheRead), ratio.toFixed(2), n(u.cacheCreation), n(u.input), n(u.output), (u.ms / 1000).toFixed(1))
 }
 type Away = { handoff: string; held?: string }
 // 交接失敗紀錄：kind 是那次 handoff 的種類，reason 開頭註明失敗階段
@@ -555,10 +559,8 @@ async function isRefreshOn($: EngineInterface) {
 
 // fork 失敗的原因；nothing-to-fork 多半是剛重新啟動（含自動更新）或剛 /clear，主對話回應一次就能用
 function forkFailure(reason: string) {
-  if (reason === 'timeout') return 'timeout：fork 超過時限沒有回應，已放棄等待'
-  return reason === 'nothing-to-fork'
-    ? 'nothing-to-fork：這個 session 剛重新啟動或剛 /clear，還沒有可以接的請求；先送一則訊息，等它回應後再執行一次'
-    : reason
+  if (reason === 'timeout') return t().fork.timeout
+  return reason === 'nothing-to-fork' ? t().fork.nothingToFork : reason
 }
 
 // 最多等 ms：逾時回 fallback（原本的 promise 照樣跑完，只是不再等它）
@@ -604,9 +606,9 @@ async function makeHandoff($: EngineInterface, kind: Kind, tokens: number | null
   const started = await $.clock.now()
   const r = await forkWithin($, HANDOFF_PROMPT, HANDOFF_TIMEOUT_MS)
   if (!r.isAnswered) {
-    $.ui.log(`handoff 產生失敗：${forkFailure(r.reason)}`)
-    $.ui.toast(`handoff 產生失敗`)
-    await recordFailure($, kind, tokens, `產生失敗：${forkFailure(r.reason)}`)
+    $.ui.log(t().handoff.failedLog(forkFailure(r.reason)))
+    $.ui.toast(t().handoff.failedToast)
+    await recordFailure($, kind, tokens, t().handoff.failGenerate(forkFailure(r.reason)))
     return undefined
   }
   const at = await $.clock.now()
@@ -622,14 +624,14 @@ async function makeHandoff($: EngineInterface, kind: Kind, tokens: number | null
   const list = ((await $.store.get(handoffsKey)) as Saved[] | undefined) ?? []
   await $.store.set(handoffsKey, [...list, saved].slice(-KEEP))
   lastHandoff = { text: r.text }
-  $.ui.log(`handoff（${kind}）${describeUsage(usage)}`)
+  $.ui.log(t().handoff.savedLog(kind, describeUsage(usage)))
   return r.text
 }
 
 // $.prompt.submit 被別的 hook 丟棄時只回 { drop }、不會丟例外：沒送進對話，當成失敗
 async function submitText($: EngineInterface, text: string) {
   const r = await $.prompt.submit({ text })
-  if (r.drop !== undefined) throw new Error(`被丟棄：${r.drop}`)
+  if (r.drop !== undefined) throw new Error(t().handoff.dropped(r.drop))
 }
 
 // /clear → 把完整文字送進新對話。送出前先存成 pendingSubmit:<舊 session id>，成功才刪；
@@ -759,7 +761,7 @@ async function distill($: EngineInterface, why: string, queue = true) {
   await showDistillStatus($, why)
   const fail = async (reason: string) => {
     distillFailed = true
-    $.ui.log(`背景整理失敗（${why}）：${reason}`)
+    $.ui.log(t().distill.failLog(why, reason))
     await $.store.set(`distill:error:${await projectKey($)}`, { at: await $.clock.now(), why, reason })
   }
   try {
@@ -783,7 +785,7 @@ async function distill($: EngineInterface, why: string, queue = true) {
     })
     if (!r.isAnswered) {
       const reason = r.reason === 'api-error' ? `api-error ${r.status ?? ''} ${r.error}`.replace(/\s+/g, ' ')
-        : r.reason === 'aborted' ? `timeout：整理超過 ${DISTILL_TIMEOUT_MS / 60_000} 分鐘沒有回應，已放棄` : r.reason
+        : r.reason === 'aborted' ? t().distill.timeout(DISTILL_TIMEOUT_MS / 60_000) : r.reason
       await fail(reason)
       return r
     }
@@ -792,8 +794,8 @@ async function distill($: EngineInterface, why: string, queue = true) {
     const { actions, rejected } = parseActions(r.text, notes, userText)
     // 整理期間經驗檔被改過：編號對不上，這次不寫也不推進進度，下次重新整理同一段
     if ((await readText($, file)) !== original) {
-      const reason = `整理期間經驗檔被修改，這次略過：${file}`
-      $.ui.log(`背景整理（${why}）${reason}`)
+      const reason = t().distill.edited(file)
+      $.ui.log(t().distill.skipLog(why, reason))
       await $.store.set(`distill:error:${await projectKey($)}`, { at: now, why, reason })
       distillFailed = true
       return r
@@ -805,19 +807,19 @@ async function distill($: EngineInterface, why: string, queue = true) {
     const usage = describeUsage({ input: r.usage.input_tokens, cacheRead: r.usage.cache_read_input_tokens, cacheCreation: r.usage.cache_creation_input_tokens, output: r.usage.output_tokens, ms: now - started })
     await $.store.set(`distill:last:${await projectKey($)}`, { at: now, why, changes, file, usage, rejected } satisfies DistillLast)
     await refreshPanel($)
-    $.ui.log(`背景整理（${why}）：${changes.length} 項變動${rejected.count ? `，丟棄 ${rejected.count} 行無效輸出` : ''}${changes.length ? `；寫入 ${file}` : ''}`)
+    $.ui.log(t().distill.doneLog(why, changes.length, rejected.count, file))
     // 先寫檔再排入；差異跟著下一則真正送進對話的訊息帶入（見 prompt.submit）
     if (changes.length > 0 && queue) {
       pendingNotes.set(sid, { changes: [...(pendingNotes.get(sid)?.changes ?? []), ...changes], file })
-      $.ui.log(`${changes.length} 項變動排入下一則訊息`)
+      $.ui.log(t().distill.queued(changes.length))
     }
     // 讓使用者看得到：寫了哪份檔案（完整路徑），不送訊息、不花 token
     if (changes.length > 0) {
-      $.ui.toast(`經驗已更新 ${changes.length} 項${queue ? '，會跟著你下一則訊息帶入' : ''}：${file}`)
+      $.ui.toast(t().distill.toast(changes.length, queue, file))
     }
     return r
   } catch (err) {
-    await fail(`寫檔失敗：${String(err)}`)
+    await fail(t().distill.writeFailed(String(err)))
     return undefined
   } finally {
     distilling = false
@@ -829,10 +831,10 @@ async function distill($: EngineInterface, why: string, queue = true) {
 async function showDistillStatus($: EngineInterface, running?: string) {
   if (deferral) return
   if (!(await isDistillOn($))) return $.ui.status(undefined)
-  if (running) return $.ui.status('正在整理筆記…')
+  if (running) return $.ui.status(t().status.running)
   const left = DISTILL_EVERY - (await sinceDistill($))
-  if (left > 0) return $.ui.status(`再 ${left} 則整理筆記`)
-  $.ui.status(((await $.session.usage()).context.tokens ?? 0) < MIN_TOKENS ? '對話還短，先不整理筆記' : '下一則後整理筆記')
+  if (left > 0) return $.ui.status(t().status.left(left))
+  $.ui.status(((await $.session.usage()).context.tokens ?? 0) < MIN_TOKENS ? t().status.short : t().status.next)
 }
 
 // 上次整理之後的使用者訊息數
@@ -852,15 +854,17 @@ async function distillStatus($: EngineInterface) {
   const file = await notesFile($)
   const notes = parseNotes(await readText($, file))
   const tiers = memoryTiers(notes, localStamp(await $.clock.now()).slice(0, 10))
+  const m = t()
+  const ind = m.ind
   return [
-    `背景整理 ${on ? 'on' : 'off'}（閒置刷新、離席、交接前、每 ${DISTILL_EVERY} 則）`,
-    ...(on ? [`　下次：再 ${Math.max(0, DISTILL_EVERY - (await sinceDistill($)))} 則，或閒置 ${IDLE_MS / 60_000} 分、交接前`] : []),
-    d ? `　上次：${new Date(d.at).toLocaleString()}・${d.why}・${d.changes.length} 項變動` : '　上次：無',
-    ...(d ? [`　${d.usage}`, ...d.changes.map(c => `　・${c}`)] : []),
-    ...(d?.rejected?.count ? [`　丟棄 ${d.rejected.count} 行無效輸出：${d.rejected.samples.join(' ／ ')}`] : []),
-    ...(err && (!d || err.at >= d.at) ? [`　上次失敗：${new Date(err.at).toLocaleString()}・${err.why}・${err.reason}`] : []),
-    `　工作區經驗：${file}（記憶 ${notes.memory.length} 條、規則 ${notes.rules.length} 條，帶入新對話的規則 ${notes.rules.filter(r => r.count >= INJECT_MIN_COUNT).length} 條）`,
-    `　記憶帶入：偏好與修正 ${tiers.full} 條整條、事實與位置 ${tiers.titles} 條只帶標題、封存 ${tiers.archived} 條（超過 ${STALE_DAYS} 天沒被證實，不帶入）`,
+    m.distillStatus.head(on ? 'on' : 'off', DISTILL_EVERY),
+    ...(on ? [`${ind}${m.distillStatus.next(Math.max(0, DISTILL_EVERY - (await sinceDistill($))), IDLE_MS / 60_000)}`] : []),
+    `${ind}${d ? m.distillStatus.last(new Date(d.at).toLocaleString(), d.why, d.changes.length) : m.distillStatus.lastNone}`,
+    ...(d ? [`${ind}${d.usage}`, ...d.changes.map(c => `${ind}${m.bullet}${c}`)] : []),
+    ...(d?.rejected?.count ? [`${ind}${m.distillStatus.rejected(d.rejected.count, d.rejected.samples.join(m.slashList))}`] : []),
+    ...(err && (!d || err.at >= d.at) ? [`${ind}${m.distillStatus.failed(new Date(err.at).toLocaleString(), err.why, err.reason)}`] : []),
+    `${ind}${m.distillStatus.notes(file, notes.memory.length, notes.rules.length, notes.rules.filter(r => r.count >= INJECT_MIN_COUNT).length)}`,
+    `${ind}${m.distillStatus.tiers(tiers.full, tiers.titles, tiers.archived, STALE_DAYS)}`,
   ].join('\n')
 }
 
@@ -886,6 +890,7 @@ async function resumeSchedule($: EngineInterface) {
 }
 
 async function onIdle($: EngineInterface) {
+  await initLang($)
   idle = undefined
   await update($, idleState, () => null)
   if (busy) return
@@ -896,25 +901,25 @@ async function onIdle($: EngineInterface) {
   if ((await isRefreshOn($)) && refreshes < MAX_REFRESH) {
     // 刷新用最便宜的 fork（只回 OK）讀一次快取；整理是另一個不帶歷史的請求，有新對話才跑
     const r = await forkWithin($, '只回覆 OK', HANDOFF_TIMEOUT_MS)
-    if (await isDistillOn($)) await distill($, '閒置刷新')
+    if (await isDistillOn($)) await distill($, t().distill.why.idle)
     refreshes += 1
     $.ui.log(r.isAnswered
-      ? `${tag} 快取刷新 ${refreshes}/${MAX_REFRESH} cache_read=${r.usage.cache_read_input_tokens} cache_creation=${r.usage.cache_creation_input_tokens}`
-      : `${tag} 快取刷新 ${refreshes}/${MAX_REFRESH} 失敗：${r.reason}`)
+      ? t().idle.refresh(refreshes, MAX_REFRESH, r.usage.cache_read_input_tokens, r.usage.cache_creation_input_tokens)
+      : t().idle.refreshFailed(refreshes, MAX_REFRESH, r.reason))
     await schedule($)
     return
   }
 
   busy = true
   try {
-    if (await isDistillOn($)) await distill($, '離席')
+    if (await isDistillOn($)) await distill($, t().distill.why.away)
     const handoff = await makeHandoff($, 'away', tokens)
     if (handoff === undefined) return
     const key = awayKey(await $.session.id())
     await $.store.set(key, { handoff } satisfies Away)
     await touchSeen($, key)
-    $.ui.log(`離席 handoff 已存好（${tokens} tokens），不會自動 /clear`)
-    $.ui.toast(`離席 handoff 已存好`)
+    $.ui.log(t().idle.awaySavedLog(tokens))
+    $.ui.toast(t().idle.awaySavedToast)
   } finally {
     busy = false
   }
@@ -930,7 +935,7 @@ function beginPresent() {
   idle = undefined
 }
 
-const heldBlock = (items: string[]) => `---\n交接期間收到的使用者訊息：\n${items.join('\n\n')}`
+const heldBlock = (items: string[]) => `${t().handoff.heldHead}\n${items.join('\n\n')}`
 
 async function present($: EngineInterface, tokens: number | null, kind: 'present' | 'manual', note?: string) {
   const startedAt = await $.clock.now()
@@ -946,34 +951,32 @@ async function present($: EngineInterface, tokens: number | null, kind: 'present
     }
   }
   const resubmit = async (batch: string) => {
-    try { await submitText($, batch) } catch (err) { $.ui.log(`重新送出交接期間的訊息失敗：${String(err)}`) }
+    try { await submitText($, batch) } catch (err) { $.ui.log(t().handoff.resubmitFailed(String(err))) }
   }
   try {
     // 交接 fork 和 /clear 前的最後整理同時發出：快取都熱著
-    const lastDistill = isDistillOn($).then(on => on ? distill($, '交接前', false) : undefined).catch(() => undefined)
+    const lastDistill = isDistillOn($).then(on => on ? distill($, t().distill.why.before, false) : undefined).catch(() => undefined)
     const handoff = await makeHandoff($, kind, tokens)
     if (handoff === undefined) { await drain(resubmit); return }
     // 整理一開始就讀好對話片段：從交接開始最多等 DISTILL_GRACE_MS 就 /clear，
     // 整理在背景跑完照樣寫檔（它不排入差異）
     const left = startedAt + DISTILL_GRACE_MS - (await $.clock.now())
     if (left > 0) await within($, lastDistill, left, undefined)
-    const why = kind === 'manual' ? '手動執行 /handoff now' : `context 達 ${tokens} tokens`
+    const why = kind === 'manual' ? t().handoff.whyManual : t().handoff.whyTokens(tokens ?? 0)
     const included = [...held]
     delivered = included.length
-    const intro = included.length === 0
-      ? `${tag} 上一段對話因${why}，已自動 /clear。以下是 handoff：請讀完後用幾行回報你理解的現況與下一步，然後等使用者指示，不要直接動手。`
-      : `${tag} 上一段對話因${why}，已自動 /clear。以下是 handoff 和交接期間使用者送出的訊息：請依 handoff 的脈絡回應最後附上的使用者訊息。`
-    const text = `${intro}${note ? `（${note}）` : ''}\n\n${handoff}${included.length ? `\n\n${heldBlock(included)}` : ''}`
+    const intro = `${tag} ${included.length === 0 ? t().handoff.intro(why) : t().handoff.introHeld(why)}`
+    const text = `${intro}${note ? t().handoff.note(note) : ''}\n\n${handoff}${included.length ? `\n\n${heldBlock(included)}` : ''}`
     const failed = await clearAndSubmit($, text)
     if (failed?.stage === 'clear') {
-      $.ui.log(`/clear 失敗：${failed.reason}`)
-      await recordFailure($, kind, tokens, `clear 失敗：${failed.reason}`, sid)
+      $.ui.log(t().handoff.clearFailedLog(failed.reason))
+      await recordFailure($, kind, tokens, t().handoff.reasonClear(failed.reason), sid)
       delivered = 0
       await drain(resubmit)
     } else if (failed) {
-      $.ui.log(`送出失敗：${failed.reason}`)
-      $.ui.toast(`handoff 已產生但送出失敗，/handoff resend 重送`)
-      await recordFailure($, kind, tokens, `送出失敗：${failed.reason}`, sid)
+      $.ui.log(t().handoff.submitFailedLog(failed.reason))
+      $.ui.toast(t().handoff.submitFailedToast)
+      await recordFailure($, kind, tokens, t().handoff.reasonSubmit(failed.reason), sid)
       // 文字建好之後才到的訊息：補進這份 pendingSubmit，重送時一起送
       let pending = text
       await drain(async batch => {
@@ -987,13 +990,13 @@ async function present($: EngineInterface, tokens: number | null, kind: 'present
       await drain(resubmit)
     }
   } catch (err) {
-    $.ui.log(`交接失敗：${String(err)}`)
+    $.ui.log(t().handoff.failedAll(String(err)))
     try {
-      await recordFailure($, kind, tokens, `例外：${String(err)}`, sid)
+      await recordFailure($, kind, tokens, t().handoff.reasonException(String(err)), sid)
       delivered = 0
       await drain(resubmit)
     } catch (err2) {
-      $.ui.log(`交接失敗後的處理也失敗：${String(err2)}`)
+      $.ui.log(t().handoff.failedCleanup(String(err2)))
     }
   } finally {
     presenting = false
@@ -1020,23 +1023,24 @@ async function onStop($: EngineInterface, e: { agent_id?: string; background_tas
     return
   }
   const agents = (await $.agent.list()).filter(a => a.status === 'running').length
-  const parts = [tasks && `${tasks} 個背景工作`, oneShot && `${oneShot} 個一次性排程`, agents && `${agents} 個子代理`].filter(Boolean)
+  const parts = [tasks && t().stop.tasks(tasks), oneShot && t().stop.oneShot(oneShot), agents && t().stop.agents(agents)].filter(Boolean)
+  const partsText = parts.join(t().list)
   let note: string | undefined
   if (parts.length > 0) {
     const cap = Math.min(Math.floor(context.window * DEFER_CAP_RATIO), threshold + DEFER_CAP_EXTRA)
     if (tokens < cap) {
-      deferral = `${parts.join('、')}還在，等它們結束再 handoff（上限 ${cap} tokens）`
-      $.ui.status(`handoff 延後：${parts.join('、')}`)
-      $.ui.log(`context ${tokens} 已達門檻，但有${parts.join('、')}，等它們結束再 handoff`)
-      if (!deferToasted) { deferToasted = true; $.ui.toast(`handoff 延後：${parts.join('、')}`) }
+      deferral = t().stop.deferral(partsText, cap)
+      $.ui.status(t().status.deferred(partsText))
+      $.ui.log(t().stop.deferLog(tokens, partsText))
+      if (!deferToasted) { deferToasted = true; $.ui.toast(t().status.deferred(partsText)) }
       return
     }
-    note = `交接時仍有${parts.join('、')}在執行，context 已達上限 ${cap}`
-    $.ui.log(`context ${tokens} 達上限 ${cap}，不再等${parts.join('、')}，直接 handoff`)
+    note = t().stop.note(partsText, cap)
+    $.ui.log(t().stop.capLog(tokens, cap, partsText))
   }
   // 上次失敗不久：先不重試
   if (retryAfter && (await $.session.turns()) - retryAfter.turns < RETRY_TURNS && (await $.clock.now()) - retryAfter.at < RETRY_MS) {
-    $.ui.log(`context ${tokens} 已達門檻，但上次 handoff 失敗不久，稍後再試`)
+    $.ui.log(t().stop.retryLog(tokens))
     return
   }
   deferral = undefined
@@ -1064,6 +1068,28 @@ function resetState() {
   deferToasted = false
   seenKnown.clear()
   guardsKeyCache = undefined
+  langReady = undefined
+  setLang('en')
+}
+
+// 介面語言：解析一次就記住（熱重載會重算）。每個 hook 一進來先等它，之後 t() 同步取字串
+let langReady: Promise<void> | undefined
+const initLang = ($: EngineInterface) => (langReady ??= detectLang($).then(setLang, () => setLang('en')))
+
+async function detectLang($: EngineInterface): Promise<Lang> {
+  if (UI_LANG !== 'auto') return UI_LANG
+  try {
+    const setting = (await $.settings.read()).language
+    if (typeof setting === 'string' && setting.trim()) return isChinese(setting) ? 'zh-TW' : 'en'
+  } catch {}
+  const vars = [await $.env.get('LC_ALL'), await $.env.get('LC_MESSAGES'), await $.env.get('LANG')]
+  // C／POSIX 不是使用者選的語言，當成沒設
+  const env = vars.find(v => v && !/^(C|POSIX)(\.|$)/.test(v))
+  let locale = env
+  if (!locale) {
+    try { locale = Intl.DateTimeFormat().resolvedOptions().locale } catch {}
+  }
+  return locale && isChinese(locale) ? 'zh-TW' : 'en'
 }
 
 // 每個 session 一把的鍵（值不改寫）：第一次看到的時間記在 seen，超過 30 天的刪掉
@@ -1170,7 +1196,8 @@ function parseGuards(text: string, names: Set<string>) {
   const rejected: string[] = []
   const start = text.indexOf(ACTIONS_START)
   const end = text.indexOf(ACTIONS_END, start + 1)
-  if (start === -1 || end === -1) return { out, rejected: ['找不到 ACTIONS 標記'] }
+  const p = t().guard.parse
+  if (start === -1 || end === -1) return { out, rejected: [p.noMarker] }
   for (const line of text.slice(start + ACTIONS_START.length, end).split('\n')) {
     if (!line.trim()) continue
     try {
@@ -1179,25 +1206,25 @@ function parseGuards(text: string, names: Set<string>) {
       const rule = str('rule'), tool = str('tool'), match = str('match'), message = str('message')
       const unless = str('unless')
       const mode = GUARD_MODES.find(m => m === g.mode)
-      if (!rule || !names.has(rule)) throw new Error('rule 不是候選規則')
-      if (!tool || !/^[\w.-]+\*?$/.test(tool)) throw new Error('tool 格式不對')
-      if (!match || !message || !mode) throw new Error('缺 match／message／mode')
-      for (const p of [match, unless]) {
-        if (p === undefined) continue
-        if (p.length > GUARD_PATTERN_MAX) throw new Error('regex 太長')
-        new RegExp(p, 'i')
+      if (!rule || !names.has(rule)) throw new Error(p.notCandidate)
+      if (!tool || !/^[\w.-]+\*?$/.test(tool)) throw new Error(p.badTool)
+      if (!match || !message || !mode) throw new Error(p.missingFields)
+      for (const pattern of [match, unless]) {
+        if (pattern === undefined) continue
+        if (pattern.length > GUARD_PATTERN_MAX) throw new Error(p.tooLong)
+        new RegExp(pattern, 'i')
       }
       // 範例驗證：違規的要擋、正確的要放行；擋不到或什麼都擋的樣式在這裡被丟掉
       const bad = str('bad'), good = str('good')
-      if (!bad || !good) throw new Error('缺 bad／good 範例')
+      if (!bad || !good) throw new Error(p.missingExamples)
       const probe = { tool, match, ...(unless ? { unless } : {}) }
       const self = tool.replace(/\*$/, '')
-      if (!guardHits(probe, self, bad)) throw new Error('違規範例沒有被擋')
-      if (guardHits(probe, self, good)) throw new Error('正確範例也會被擋')
-      if (out.some(o => o.rule === rule)) throw new Error('同一條規則重複')
+      if (!guardHits(probe, self, bad)) throw new Error(p.badNotBlocked)
+      if (guardHits(probe, self, good)) throw new Error(p.goodBlocked)
+      if (out.some(o => o.rule === rule)) throw new Error(p.duplicate)
       out.push({ ...probe, rule, mode, message, bad, good })
     } catch (err) {
-      rejected.push(`${clip(line.trim(), 80)}（${err instanceof Error ? err.message : String(err)}）`)
+      rejected.push(p.wrap(clip(line.trim(), 80), err instanceof Error ? err.message : String(err)))
     }
   }
   return { out, rejected }
@@ -1212,7 +1239,7 @@ async function guardCandidates($: EngineInterface) {
 
 async function suggestGuards($: EngineInterface) {
   const candidates = await guardCandidates($)
-  if (candidates.length === 0) return { text: `${tag} 沒有出現 ${GUARD_MIN_COUNT} 次以上、還沒有守門的規則\n${await guardList($)}` }
+  if (candidates.length === 0) return { text: `${tag} ${t().guard.noCandidates(GUARD_MIN_COUNT)}\n${await guardList($)}` }
   const rows = (await $.session.messages()) as readonly Row[]
   const calls = rows.flatMap(r => r.toolUses)
   const r = await $.model.complete({
@@ -1223,7 +1250,7 @@ async function suggestGuards($: EngineInterface) {
     system: guardPrompt(candidates, [...new Set(calls.map(c => c.tool))]),
     prompt: '依系統指示輸出 ACTIONS。',
   })
-  if (!r.isAnswered) return { text: `${tag} 守門建議失敗：${r.reason}` }
+  if (!r.isAnswered) return { text: `${tag} ${t().guard.suggestFailed(r.reason)}` }
   const { out, rejected } = parseGuards(r.text, new Set(candidates.map(c => c.name)))
   const guards = await loadGuards($)
   const at = await $.clock.now()
@@ -1235,27 +1262,26 @@ async function suggestGuards($: EngineInterface) {
   await $.store.set(await guardsKey($), [...guards, ...added])
   return {
     text: [
-      `${tag} 看了 ${candidates.length} 條規則，提出 ${added.length} 個守門草稿（還沒生效，/handoff guard on N 核准）`,
-      ...(rejected.length ? [`　丟棄 ${rejected.length} 行：${rejected.join(' ／ ')}`] : []),
+      `${tag} ${t().guard.suggested(candidates.length, added.length)}`,
+      ...(rejected.length ? [`${t().ind}${t().guard.droppedLines(rejected.length, rejected.join(t().slashList))}`] : []),
       '',
       await guardList($),
     ].join('\n'),
   }
 }
 
-const STATE_LABEL: Record<GuardState, string> = { proposed: '草稿', on: '啟用', off: '停用' }
-
 async function guardList($: EngineInterface) {
   const guards = await loadGuards($)
-  if (guards.length === 0) return `守門：無（/handoff guard suggest 從出現 ${GUARD_MIN_COUNT} 次以上的規則提出草稿）`
+  const m = t()
+  if (guards.length === 0) return m.guard.none(GUARD_MIN_COUNT)
   return [
-    '守門：',
+    m.guard.listHead,
     ...guards.flatMap(g => [
-      `#${g.id} [${STATE_LABEL[g.state]}・${g.mode === 'deny' ? '擋下' : '提醒'}] ${g.rule}（已觸發 ${g.hits} 次）`,
-      `　${g.tool} 符合 /${g.match}/${g.unless ? ` 且不符合 /${g.unless}/` : ''}`,
-      `　→ ${g.message}`,
-      ...(g.bad && g.good ? [`　範例：擋「${clip(g.bad, 80)}」，放行「${clip(g.good, 80)}」`] : []),
-      ...(g.replay ? [`　提案時試比對這段對話：${g.replay.calls} 次工具呼叫中會命中 ${g.replay.hits} 次`] : []),
+      m.guard.entry(g.id, m.guard.state[g.state], m.guard.mode[g.mode], g.rule, g.hits),
+      `${m.ind}${m.guardMatch(g.tool, g.match, g.unless)}`,
+      `${m.ind}→ ${g.message}`,
+      ...(g.bad && g.good ? [`${m.ind}${m.guard.example(clip(g.bad, 80), clip(g.good, 80))}`] : []),
+      ...(g.replay ? [`${m.ind}${m.guard.replay(g.replay.calls, g.replay.hits)}`] : []),
     ]),
   ].join('\n')
 }
@@ -1264,13 +1290,13 @@ async function guardCommand($: EngineInterface, args: string[]) {
   const [action = '', idText = '', modeText = ''] = args
   if (action === '') return { text: await guardList($) }
   if (action === 'suggest') return suggestGuards($)
-  const usage = `${tag} 用法 /handoff guard [suggest | on N | off N | mode N deny|remind | drop N]`
+  const usage = `${tag} ${t().guard.usage}`
   const change = action === 'on' || action === 'off' || action === 'drop' ? action
     : action === 'mode' ? GUARD_MODES.find(m => m === modeText) : undefined
   if (change === undefined || !idText) return { text: usage }
   const g = await changeGuard($, Number(idText), change)
-  if (!g) return { text: `${tag} 沒有守門 #${idText}\n${await guardList($)}` }
-  return { text: `${tag} 守門 #${g.id} 已${change === 'drop' ? '刪除' : '更新'}\n${await guardList($)}` }
+  if (!g) return { text: `${tag} ${t().guard.missing(idText)}\n${await guardList($)}` }
+  return { text: `${tag} ${t().guard.changed(g.id, change === 'drop')}\n${await guardList($)}` }
 }
 
 // 啟用／停用／刪除／換模式；回傳改到的那一條，找不到回 undefined
@@ -1294,9 +1320,7 @@ async function togglePanel($: EngineInterface) {
   }
   await update($, panelUi, u => ({ open, tab: u.tab, expanded: u.expanded, suggesting: u.suggesting }))
   return {
-    text: open
-      ? `${tag} 面板已開在輸入框上方：直接點按鈕，或按 ctrl+x tab 用鍵盤操作；再打一次 /handoff panel 關閉`
-      : `${tag} 面板已關閉`,
+    text: `${tag} ${open ? t().panelCmd.opened : t().panelCmd.closed}`,
   }
 }
 
@@ -1304,8 +1328,8 @@ async function guardSummary($: EngineInterface) {
   const guards = await loadGuards($)
   const count = (s: GuardState) => guards.filter(g => g.state === s).length
   const candidates = (await guardCandidates($)).length
-  return `守門：啟用 ${count('on')}、草稿 ${count('proposed')}、停用 ${count('off')}` +
-    (candidates ? `；有 ${candidates} 條規則出現 ${GUARD_MIN_COUNT} 次以上還沒有守門（/handoff guard suggest）` : '')
+  return t().guard.summary(count('on'), count('proposed'), count('off')) +
+    (candidates ? t().guard.summaryMore(candidates, GUARD_MIN_COUNT) : '')
 }
 
 async function recordHit($: EngineInterface, id: number) {
@@ -1348,7 +1372,7 @@ async function refreshPanel($: EngineInterface) {
     const data = await loadPanelData($)
     await update($, panelData, () => data)
   } catch (err) {
-    await setNote($, `面板資料讀取失敗：${String(err)}`)
+    await setNote($, t().panelCmd.readFailed(String(err)))
   }
 }
 
@@ -1359,19 +1383,19 @@ const setNote = ($: EngineInterface, note: string | undefined) =>
 // 刪一條記憶（m:<原文>）或規則（r:<名稱>）：重讀經驗檔、比對原文，寫檔前把原檔備份到旁邊的 .ctx-handoff-backup/
 // 封存的記憶按「留下」：加一筆今天的根據，等於人工證實一次（不刪內容，不用備份）
 async function keepNote($: EngineInterface, head: string) {
-  if (distilling) return '背景整理進行中，稍後再試'
+  if (distilling) return t().panelCmd.busyKeep
   const file = await notesFile($)
   const notes = parseNotes(await readText($, file))
   const m = notes.memory.find(x => memHead(x) === head)
-  if (!m) return '找不到這一條，經驗檔可能剛被改過'
+  if (!m) return t().panelCmd.notFound
   const now = await $.clock.now()
   m.evidence = [...m.evidence, `${localStamp(now).slice(0, 10)}｜在面板確認留下`].slice(-EVIDENCE_KEEP)
   await $.fs.write(file, renderNotes(notes, localStamp(now)))
-  return `已留下：${m.title}（恢復帶入新對話）`
+  return t().panelCmd.kept(m.title)
 }
 
 async function dropNote($: EngineInterface, key: string) {
-  if (distilling) return '背景整理進行中，稍後再刪'
+  if (distilling) return t().panelCmd.busyDrop
   const file = await notesFile($)
   const original = await readText($, file)
   const notes = parseNotes(original)
@@ -1380,27 +1404,27 @@ async function dropNote($: EngineInterface, key: string) {
     ? { ...notes, memory: notes.memory.filter(m => memHead(m) !== target) }
     : { ...notes, rules: notes.rules.filter(r => r.name !== target) }
   if (updated.memory.length + updated.rules.length === notes.memory.length + notes.rules.length) {
-    return '找不到這一條，經驗檔可能剛被改過'
+    return t().panelCmd.notFound
   }
   const now = await $.clock.now()
   const dir = file.slice(0, file.lastIndexOf('/'))
   await $.fs.write(`${dir}/.ctx-handoff-backup/${new Date(now).toISOString().slice(0, 19).replace(/:/g, '-')}-ctx-handoff.md`, original)
   await $.fs.write(file, renderNotes(updated, localStamp(now)))
-  return `已刪除${key.startsWith('m:') ? '記憶' : `規則「${target}」`}（原檔已備份到 ${dir}/.ctx-handoff-backup/）`
+  return t().panelCmd.deleted(key.startsWith('m:'), target, dir)
 }
 
 function panelActions($: EngineInterface): PanelActions {
   // 讀寫檔的動作在背景跑（不讓按鍵等它），跑完重算快照、結果寫進提示列；只改畫面狀態的直接寫 $.state
   const run = (work: () => Promise<string | undefined>) => {
     void work()
-      .catch(err => `失敗：${String(err)}`)
+      .catch(err => t().panelCmd.failed(String(err)))
       .then(async note => { await refreshPanel($); await setNote($, note) })
   }
   const setUi = (fn: (u: PanelUi) => PanelUi) => update($, panelUi, fn)
   return {
     guard: (id, action) => run(async () => {
       const g = await changeGuard($, id, action)
-      return g ? `守門 #${id} 已${action === 'on' ? '核准' : action === 'off' ? '停用' : '刪除'}` : `沒有守門 #${id}`
+      return g ? t().guard.panelDone(id, action) : t().guard.missing(String(id))
     }),
     suggest: () => run(async () => {
       if ((await read($, panelUi)).suggesting) return undefined
@@ -1421,16 +1445,17 @@ export const register: Register = on => {
   resetState()
 
   on('session.start', async ($, e, next) => {
-    const description = 'ctx-handoff: 狀態；now／dry／distill／resume／continue／resend／refresh on|off／distill on|off'
+    await initLang($)
+    const description = t().start.description
     // 專案或使用者已有同名的 /handoff（例如自己的 skill）時，改用 /ctx-handoff
     try {
       await $.command.register({ name: 'handoff', description })
     } catch (err) {
       try {
         await $.command.register({ name: 'ctx-handoff', description })
-        $.ui.log(`/handoff 已被佔用（${String(err)}），改用 /ctx-handoff`)
+        $.ui.log(t().start.taken(String(err)))
       } catch (err2) {
-        $.ui.log(`指令註冊失敗：${String(err2)}`)
+        $.ui.log(t().start.registerFailed(String(err2)))
       }
     }
     try {
@@ -1440,12 +1465,12 @@ export const register: Register = on => {
     try {
       await resumeSchedule($)
     } catch (err) {
-      $.ui.log(`接回閒置計時失敗：${String(err)}`)
+      $.ui.log(t().start.resumeFailed(String(err)))
     }
     try {
       await prune($)
     } catch (err) {
-      $.ui.log(`啟動時整理 store 失敗：${String(err)}`)
+      $.ui.log(t().start.pruneFailed(String(err)))
     }
     return next(e)
   })
@@ -1469,14 +1494,16 @@ export const register: Register = on => {
       const text = inputText(e as Record<string, unknown>)
       hit = (await loadGuards($)).find(g => g.state === 'on' && guardHits(g, e.tool, text))
     } catch (err) {
-      $.ui.log(`守門比對失敗，放行：${String(err)}`)
+      await initLang($)
+      $.ui.log(t().guard.checkFailed(String(err)))
     }
     if (!hit) return next(e)
+    await initLang($)
     await recordHit($, hit.id)
-    const head = `${tag} 守門 #${hit.id}（${hit.rule}）：${hit.message}`
+    const head = `${tag} ${t().guard.head(hit.id, hit.rule, hit.message)}`
     if (hit.mode === 'deny') {
-      $.ui.toast(`守門 #${hit.id} 擋下 ${e.tool}：${hit.rule}`)
-      return { deny: `${head}\n使用者確定要照原樣執行時，請使用者先執行 /handoff guard off ${hit.id}。` }
+      $.ui.toast(t().guard.denyToast(hit.id, e.tool, hit.rule))
+      return { deny: `${head}\n${t().guard.denyHint(hit.id)}` }
     }
     const r = await next(e)
     return r.deny === undefined ? { ...r, context: [...(r.context ?? []), head] } : r
@@ -1485,6 +1512,7 @@ export const register: Register = on => {
   // 面板沒開、或問卷佔著輸入框上方時，交給下層（其他 plugin 或引擎自己的）
   // 只讀 $.state（讀了就訂閱，寫入時自動重畫），不讀檔
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    await initLang($)
     const ui = await read($, panelUi)
     const data = ui.open && !e.props.hasSurvey ? await read($, panelData) : null
     return data
@@ -1493,6 +1521,7 @@ export const register: Register = on => {
   })
 
   on('turn.complete', async ($, e, next) => {
+    await initLang($)
     const out = await next(e)
     if (e.agentId !== undefined || busy) return out
     // 別的 session 可能改了經驗檔或守門：每個回合結束重算一次面板快照（面板沒開時只讀一個 state）
@@ -1501,7 +1530,7 @@ export const register: Register = on => {
     const away = (await $.store.get(awayKey(await $.session.id()))) as Away | undefined
     if (away !== undefined && away.held === undefined) {
       await $.store.delete(awayKey(await $.session.id()))
-      $.ui.log(`對話已繼續，刪除過時的離席 handoff`)
+      $.ui.log(t().idle.outdated)
     }
     // 每個回合都用到快取，TTL 從這裡重算
     await schedule($)
@@ -1511,20 +1540,21 @@ export const register: Register = on => {
     if (context.tokens !== undefined && context.tokens >= thresholdOf(context.window)) return out
     // 每 DISTILL_EVERY 則使用者訊息，趁快取熱整理一次
     if ((context.tokens ?? 0) >= MIN_TOKENS && !distilling && (await isDistillOn($)) && (await sinceDistill($)) >= DISTILL_EVERY) {
-      $.clock.after(0, () => void distill($, `每 ${DISTILL_EVERY} 則`))
+      $.clock.after(0, () => void distill($, t().distill.why.every(DISTILL_EVERY)))
     }
     if (!distilling) await showDistillStatus($)
     return out
   })
 
   on('classic.Stop', async ($, e, next) => {
+    await initLang($)
     const out = await next(e)
     // 別的 Stop hook 要求繼續：回合其實沒結束，等它真正停下的那次 Stop 再判斷
     if (out.block !== undefined) return out
     try {
       await onStop($, e)
     } catch (err) {
-      $.ui.log(`Stop 判斷失敗：${String(err)}`)
+      $.ui.log(t().stop.stopFailed(String(err)))
     }
     return out
   })
@@ -1532,21 +1562,22 @@ export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     const isHuman = e.origin.kind === 'composer' || e.origin.kind === 'bridge'
     if (!isHuman) return next(e)
+    await initLang($)
     const isSlash = e.text.trimStart().startsWith('/')
     // 交接進行中：訊息先攔下，建好的文字或交接後一起送進新對話
     const hasAttachments = (e.attachments?.length ?? 0) > 0
     if (presenting && !isSlash && (e.text.trim() || hasAttachments)) {
       const elapsed = presentStartedAt === undefined ? 0 : Math.round(((await $.clock.now()) - presentStartedAt) / 1000)
-      const wait = `已進行 ${elapsed} 秒，通常 1 分鐘內完成，最長約 ${Math.round(Math.max(HANDOFF_TIMEOUT_MS, DISTILL_GRACE_MS) / 60_000)} 分鐘`
+      const wait = t().submit.wait(elapsed, Math.round(Math.max(HANDOFF_TIMEOUT_MS, DISTILL_GRACE_MS) / 60_000))
       // 只能暫存文字：mod 拿不到附件內容
-      const attachNote = hasAttachments ? '圖片等附件無法暫存，交接完成後請重新貼上。' : ''
-      if (!e.text.trim()) return { drop: `${tag} 正在交接（${wait}）。${attachNote}` }
+      const attachNote = hasAttachments ? t().submit.attach : ''
+      if (!e.text.trim()) return { drop: `${tag} ${t().submit.busy(wait, attachNote)}` }
       // 以為卡住而重送：同樣的內容只送一次
       if (held.some(h => h.trim() === e.text.trim())) {
-        return { drop: `${tag} 正在交接（${wait}）。這則訊息先前已暫存，不會重複送出。${attachNote}` }
+        return { drop: `${tag} ${t().submit.dup(wait, attachNote)}` }
       }
       held.push(e.text)
-      return { drop: `${tag} 正在交接（${wait}），這則訊息已暫存，會在新對話一併送出。${attachNote}` }
+      return { drop: `${tag} ${t().submit.held(wait, attachNote)}` }
     }
     idle?.cancel()
     idle = undefined
@@ -1560,7 +1591,7 @@ export const register: Register = on => {
     }
     if (myPending && !busy && !pendingToasted) {
       pendingToasted = true
-      $.ui.toast(`有一份 handoff 沒送達，/handoff resend 重送`)
+      $.ui.toast(t().submit.pendingToast)
     }
     if (isSlash) return next(e)
 
@@ -1571,17 +1602,10 @@ export const register: Register = on => {
       if (away.held === undefined) {
         // 只有附件、沒有文字：沒有可以暫存的內容，先請使用者選擇
         if (!e.text.trim()) {
-          return {
-            drop: `${tag} 有一份離席 handoff，舊對話的快取已過期。圖片等附件無法暫存：` +
-              '請先 /handoff resume（開新對話）或 /handoff continue（留在舊對話），再重新貼上。',
-          }
+          return { drop: `${tag} ${t().submit.awayAttach}` }
         }
         await $.store.set(key, { ...away, held: e.text } satisfies Away)
-        return {
-          drop: `${tag} 有一份離席 handoff，舊對話的快取已過期。` +
-            '/handoff resume：開新對話接續，並帶上這則訊息；/handoff continue：在舊對話送出這則訊息（或直接再送一次）。' +
-            (hasAttachments ? '只暫存了文字，圖片等附件請在選擇後重新貼上。' : ''),
-        }
+        return { drop: `${tag} ${t().submit.awayHeld(hasAttachments)}` }
       }
       // 再送一次＝選擇繼續舊對話；文字不同就把先前攔下的那則一起帶上
       await $.store.delete(key)
@@ -1597,6 +1621,7 @@ export const register: Register = on => {
 
   // 只有一個指令 /handoff（被佔用時是 /ctx-handoff），用子指令區分；不帶參數就顯示狀態和用法
   for (const command of ['handoff', 'ctx-handoff']) on('command.run', { command }, async ($, e) => {
+    await initLang($)
     const [sub = '', arg = '', ...rest] = e.args.trim().split(/\s+/)
     switch (sub) {
       case '': return { text: await status($) }
@@ -1613,25 +1638,12 @@ export const register: Register = on => {
         return r
       }
       case 'panel': return togglePanel($)
-      default: return { text: `${tag} 不認得「${sub}」\n${USAGE}` }
+      default: return { text: `${tag} ${t().cmd.unknown(sub)}\n${usageText()}` }
     }
   })
 }
 
-const USAGE = [
-  '用法：',
-  '　/handoff                  狀態',
-  '　/handoff now              立刻產生 handoff 並 /clear',
-  '　/handoff dry              試產一份 handoff，不 /clear',
-  '　/handoff distill          立刻整理這個工作區的經驗',
-  '　/handoff resume           用離席 handoff 開新對話接續（會 /clear）',
-  '　/handoff continue         放棄離席 handoff，在舊對話送出被攔下的訊息',
-  '　/handoff resend           重新送出沒送達的 handoff（不 /clear）',
-  '　/handoff refresh on|off   開關閒置時的快取刷新',
-  '　/handoff distill on|off   開關背景整理',
-  '　/handoff panel            開關輸入框上方的面板：最近整理的變動、刪掉記錯的筆記、核准守門',
-  '　/handoff guard           守門清單；suggest 從常犯規則提草稿；on|off|drop N；mode N deny|remind',
-].join('\n')
+const usageText = () => [t().cmd.usageHead, ...t().cmd.usageLines].join('\n')
 
 async function status($: EngineInterface) {
   const { context } = await $.session.usage()
@@ -1640,43 +1652,44 @@ async function status($: EngineInterface) {
   const list = ((await $.store.get(`handoffs:${pk}`)) as Saved[] | undefined) ?? []
   const last = list.at(-1)
   const herr = (await $.store.get(`handoff:error:${pk}`)) as HandoffError | undefined
+  const m = t()
   return [
-    `${tag} context ${context.tokens ?? '?'} / 門檻 ${thresholdOf(context.window)}（視窗 ${context.window}）`,
-    `快取刷新 ${(await isRefreshOn($)) ? 'on' : 'off'}，本次閒置已刷新 ${refreshes}/${MAX_REFRESH}，計時器${idle ? '等待中' : '未啟動'}`,
-    `離席 handoff：${away ? (away.held === undefined ? '有' : '有（已攔下一則訊息）') : '無'}`,
-    `最近一份 handoff：${last ? `${new Date(last.at).toLocaleString()} ${last.kind}，context ${last.tokens ?? '?'}` : '無'}`,
-    ...(last?.usage ? [`　${describeUsage(last.usage)}`] : []),
-    ...(herr && (!last || herr.at >= last.at) ? [`　最近失敗：${new Date(herr.at).toLocaleString()} ${herr.kind}，${herr.reason}`] : []),
-    ...(myPending ? ['未送達的 handoff：有（/handoff resend 重送）'] : []),
-    ...(deferral ? [`handoff 延後：${deferral}`] : []),
-    ...(snapshot ? [`背景（上次 Stop）：工作 ${snapshot.tasks}、一次性排程 ${snapshot.oneShot}、循環排程 ${snapshot.recurring}`] : []),
+    `${tag} ${m.cmd.context(String(context.tokens ?? '?'), thresholdOf(context.window), context.window)}`,
+    m.cmd.refresh((await isRefreshOn($)) ? 'on' : 'off', refreshes, MAX_REFRESH, idle !== undefined),
+    m.cmd.away(away ? (away.held === undefined ? 'yes' : 'held') : 'none'),
+    m.cmd.latest(last ? { at: new Date(last.at).toLocaleString(), kind: last.kind, tokens: String(last.tokens ?? '?') } : undefined),
+    ...(last?.usage ? [`${m.ind}${describeUsage(last.usage)}`] : []),
+    ...(herr && (!last || herr.at >= last.at) ? [`${m.ind}${m.cmd.latestFailure(new Date(herr.at).toLocaleString(), herr.kind, herr.reason)}`] : []),
+    ...(myPending ? [m.cmd.undelivered] : []),
+    ...(deferral ? [m.cmd.deferred(deferral)] : []),
+    ...(snapshot ? [m.cmd.background(snapshot.tasks, snapshot.oneShot, snapshot.recurring)] : []),
     await distillStatus($),
     await guardSummary($),
     '',
-    USAGE,
+    usageText(),
   ].join('\n')
 }
 
 async function handoffNow($: EngineInterface) {
-  if (busy) return { text: `${tag} 正在處理另一個 handoff` }
+  if (busy) return { text: `${tag} ${t().cmd.busy}` }
   const { context } = await $.session.usage()
   const tokens = context.tokens ?? null
   beginPresent()
   $.clock.after(0, () => void present($, tokens, 'manual'))
-  return { text: `${tag} 正在產生 handoff，接著 /clear 再送出` }
+  return { text: `${tag} ${t().cmd.nowStarted}` }
 }
 
 async function handoffDry($: EngineInterface) {
-  if (busy) return { text: `${tag} 正在處理另一個 handoff` }
+  if (busy) return { text: `${tag} ${t().cmd.busy}` }
   const { context } = await $.session.usage()
   busy = true
   try {
     const text = await makeHandoff($, 'dry', context.tokens ?? null)
-    if (text === undefined) return { text: `${tag} 試產失敗，原因見上方記錄` }
+    if (text === undefined) return { text: `${tag} ${t().cmd.dryFailed}` }
     const list = ((await $.store.get(`handoffs:${await projectKey($)}`)) as Saved[] | undefined) ?? []
     const usage = list.at(-1)?.usage
     return {
-      text: `${tag} 試產完成（沒有 /clear），context ${context.tokens ?? '?'}\n` +
+      text: `${tag} ${t().cmd.dryDone(String(context.tokens ?? '?'))}\n` +
         `${usage ? describeUsage(usage) : ''}\n\n${text}`,
     }
   } finally {
@@ -1688,32 +1701,30 @@ async function distillCommand($: EngineInterface, arg: string) {
   if (arg === 'on' || arg === 'off') {
     await $.store.set('distill', arg === 'on')
     await showDistillStatus($)
-    return { text: `${tag} 背景整理已設為 ${arg}` }
+    return { text: `${tag} ${t().cmd.distillSet(arg)}` }
   }
-  if (arg !== '') return { text: `${tag} 用法 /handoff distill（立刻整理）或 /handoff distill on|off` }
-  if (distilling) return { text: `${tag} 正在整理中` }
-  const r = await distill($, '手動')
+  if (arg !== '') return { text: `${tag} ${t().cmd.distillUsage}` }
+  if (distilling) return { text: `${tag} ${t().cmd.distilling}` }
+  const r = await distill($, t().distill.why.manual)
   if (r === undefined || !r.isAnswered || distillFailed) {
-    return { text: `${tag} 沒有整理：上次整理之後沒有新訊息，或整理失敗\n${await distillStatus($)}` }
+    return { text: `${tag} ${t().cmd.distillNone}\n${await distillStatus($)}` }
   }
-  return { text: `${tag} 整理完成\n${await distillStatus($)}` }
+  return { text: `${tag} ${t().cmd.distillDone}\n${await distillStatus($)}` }
 }
 
 async function refreshCommand($: EngineInterface, arg: string) {
-  if (arg !== 'on' && arg !== 'off') return { text: `${tag} 目前 ${(await isRefreshOn($)) ? 'on' : 'off'}；用法 /handoff refresh on|off` }
+  if (arg !== 'on' && arg !== 'off') return { text: `${tag} ${t().cmd.refreshNow((await isRefreshOn($)) ? 'on' : 'off')}` }
   await $.store.set('refresh', arg === 'on')
-  return { text: `${tag} 快取刷新已設為 ${arg}${arg === 'off' ? '（閒置 55 分鐘就直接產生離席 handoff）' : ''}` }
+  return { text: `${tag} ${t().cmd.refreshSet(arg)}` }
 }
 
 async function resume($: EngineInterface) {
   const key = awayKey(await $.session.id())
   const away = (await $.store.get(key)) as Away | undefined
-  if (away === undefined) return { text: `${tag} 沒有離席 handoff` }
+  if (away === undefined) return { text: `${tag} ${t().cmd.noAway}` }
   await $.store.delete(key)
-  const intro = away.held === undefined
-    ? `${tag} 上一段對話閒置後產生了 handoff，已開新對話接續。請讀完後用幾行回報你理解的現況與下一步，然後等使用者指示。`
-    : `${tag} 上一段對話閒置後產生了 handoff，已開新對話接續。請依 handoff 的脈絡回應最後附上的使用者訊息。`
-  const handoff = away.held === undefined ? away.handoff : `${away.handoff}\n\n---\n使用者回來後的第一則訊息：\n${away.held}`
+  const intro = `${tag} ${away.held === undefined ? t().cmd.resumeIntro : t().cmd.resumeIntroHeld}`
+  const handoff = away.held === undefined ? away.handoff : `${away.handoff}\n\n${t().cmd.resumeHeld}\n${away.held}`
   busy = true
   const sid = await $.session.id()
   $.clock.after(0, () => {
@@ -1722,18 +1733,18 @@ async function resume($: EngineInterface) {
 ${handoff}`)
       .then(async failed => {
         if (!failed) return
-        $.ui.log(`/clear 或送出失敗：${failed.reason}`)
-        await recordFailure($, 'away', null, `${failed.stage} 失敗：${failed.reason}`, sid)
+        $.ui.log(t().cmd.resumeFailedLog(failed.reason))
+        await recordFailure($, 'away', null, t().handoff.reasonStage(failed.stage, failed.reason), sid)
         // 還在舊對話：放回離席 handoff（連同攔下的訊息），可以再 /handoff resume 或 continue
         if (failed.stage === 'clear') {
           await $.store.set(key, away)
-          $.ui.toast(`/clear 失敗，離席 handoff 已保留，可以再 /handoff resume`)
+          $.ui.toast(t().cmd.resumeClearFailed)
         }
       })
-      .catch(err => $.ui.log(`/clear 或送出失敗：${String(err)}`))
+      .catch(err => $.ui.log(t().cmd.resumeFailedLog(String(err))))
       .finally(() => { busy = false })
   })
-  return { text: `${tag} 即將 /clear 並送出離席 handoff` }
+  return { text: `${tag} ${t().cmd.resuming}` }
 }
 
 // 重新送出沒送達的 handoff：只用這個 process 自己的紀錄，不碰其他 session 的 pendingSubmit；不 /clear
@@ -1746,11 +1757,11 @@ async function resend($: EngineInterface) {
     text = typeof stored === 'string' ? stored : undefined
   }
   if (text === undefined && lastHandoff) {
-    text = `${tag} 重新送出上一份 handoff。請讀完後用幾行回報你理解的現況與下一步，然後等使用者指示，不要直接動手。
+    text = `${tag} ${t().cmd.resendIntro}
 
 ${lastHandoff.text}`
   }
-  if (text === undefined) return { text: `${tag} 這個 session 沒有可以重送的 handoff` }
+  if (text === undefined) return { text: `${tag} ${t().cmd.nothingToResend}` }
   const body = text
   $.clock.after(0, () => {
     void submitText($, body)
@@ -1758,18 +1769,18 @@ ${lastHandoff.text}`
         if (key !== undefined) await $.store.delete(key)
         myPending = undefined
       })
-      .catch(err => $.ui.log(`重送失敗：${String(err)}`))
+      .catch(err => $.ui.log(t().cmd.resendFailed(String(err))))
   })
-  return { text: `${tag} 正在重新送出 handoff（不 /clear）` }
+  return { text: `${tag} ${t().cmd.resending}` }
 }
 
 async function keepOld($: EngineInterface) {
   const key = awayKey(await $.session.id())
   const away = (await $.store.get(key)) as Away | undefined
-  if (away === undefined) return { text: `${tag} 沒有離席 handoff` }
+  if (away === undefined) return { text: `${tag} ${t().cmd.noAway}` }
   await $.store.delete(key)
   const msg = away.held
-  if (msg === undefined) return { text: `${tag} 已捨棄離席 handoff，繼續舊對話` }
-  $.clock.after(0, () => void submitText($, msg).catch(err => $.ui.log(`送出被攔下的訊息失敗：${String(err)}`)))
-  return { text: `${tag} 已捨棄離席 handoff，在舊對話送出剛才的訊息` }
+  if (msg === undefined) return { text: `${tag} ${t().cmd.discarded}` }
+  $.clock.after(0, () => void submitText($, msg).catch(err => $.ui.log(t().cmd.sendHeldFailed(String(err)))))
+  return { text: `${tag} ${t().cmd.discardedSend}` }
 }

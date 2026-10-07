@@ -43,7 +43,9 @@ let curRoot = 'C:\\proj'
 let curCwd = 'C:/proj'
 
 // 引擎底下的世界：用量、fork、/clear、送出、檔案，全部記下來
-const world = (on: On, tokens: number, window = 1_000_000, store: Record<string, unknown> = {}, agents: { id: string; status: string }[] = [], turns: number | (() => number) = 0) => {
+const world = (on: On, tokens: number, window = 1_000_000, store: Record<string, unknown> = {}, agents: { id: string; status: string }[] = [], turns: number | (() => number) = 0,
+  // 介面語言由這裡的環境變數決定；測試預設釘在繁體中文，不看執行測試那台機器的語系
+  env: Record<string, string> = { LANG: 'zh_TW.UTF-8' }) => {
   const turnsOf = typeof turns === 'function' ? turns : () => turns
   const forks: string[] = []
   const completes: { model: string; effort?: string; system?: string; prompt: string; timeoutMs?: number }[] = []
@@ -84,7 +86,7 @@ const world = (on: On, tokens: number, window = 1_000_000, store: Record<string,
   on('store.keys', () => ({ value: [...kv.keys()] }))
   const get = (key: string) => kv.get(key)
   const put = (key: string, value: unknown) => { kv.set(key, value) }
-  mock.env(on, { USERPROFILE: 'C:\\Users\\u' })
+  mock.env(on, { USERPROFILE: 'C:\\Users\\u', ...env })
   on('session.id', () => ({ value: curSid }))
   on('session.turns', () => ({ value: turnsOf() }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { tokens, window }, rateLimits: [] } }))
@@ -1757,3 +1759,94 @@ test('記憶的根據：模型自己在開頭寫的日期去掉，只留程式�
   await distillNow($)
   expect(w.files.get(NOTES) ?? '').toContain('  - 根據：1970-01-01 S1｜PR #1 實測')
 })
+
+// ---------- 介面語言：繁體中文與英文 ----------
+const EN = { LANG: 'en_US.UTF-8' }
+const HAS_CJK = /[\u3400-\u9fff\uff00-\uffef]/
+
+test('英文：狀態列、紀錄與 toast 沒有 [ctx-handoff] 前綴', async ($, on) => {
+  const w = world(on, 100_000, 1_000_000, {}, [], 5, EN)
+  await endTurn($)
+  expect(w.statuses.at(-1)).toBe('25 more messages until notes update')
+  await distillNow($)
+  expect(w.statuses).toContain('Updating notes…')
+  expect(w.statuses.at(-1)).toBe('30 more messages until notes update')
+  const toast = w.toasts.find(t => t.includes('Notes updated'))
+  expect(toast).toContain('Notes updated: 2 changes, sent along with your next message')
+  expect(toast).toContain(NOTES)
+  await cmd($, 'distill off')
+  expect(w.statuses.at(-1)).toBeUndefined()
+  expect([...w.statuses, ...w.toasts, ...w.logs].filter(x => x?.includes('[ctx-handoff]'))).toEqual([])
+})
+
+test('英文：對話還短時的狀態列', async ($, on) => {
+  const w = world(on, 10_000, 1_000_000, {}, [], 30, EN)
+  await endTurn($)
+  expect(w.statuses.at(-1)).toBe('Conversation is short, notes not updated yet')
+})
+
+test('英文：/handoff 狀態與用法回覆保留 [ctx-handoff]，內文沒有中文', async ($, on) => {
+  const w = world(on, 650_000, 1_000_000, {}, [], 5, EN)
+  const s = await cmd($, '')
+  expect(s.text).toStartWith('[ctx-handoff] context 650000 / threshold 600000 (window 1000000)')
+  expect(s.text).toContain('Cache refresh on')
+  expect(s.text).toContain('/handoff now')
+  expect(s.text).toContain('Guards: 0 on, 0 draft, 0 off')
+  expect(s.text).not.toMatch(HAS_CJK)
+  const u = await cmd($, 'nwo')
+  expect(u.text).toContain('Unknown subcommand "nwo"')
+  expect(w.forks.length).toBe(0)
+})
+
+test('英文：離席與交接的提示', async ($, on) => {
+  const w = world(on, 100_000, 1_000_000, { 'away:S1': { handoff: 'HANDOFF: test' } }, [], 0, EN)
+  const r = await say($, 'hello')
+  expect(r.drop).toContain('There is an away handoff')
+  expect(r.drop).not.toMatch(HAS_CJK)
+  await resume($)
+  await w.clock.advance(0)
+  expect(w.submits[0]).toContain('The previous conversation went idle')
+  expect(w.submits[0]).toContain('HANDOFF: test')
+})
+
+test('英文：交接出錯時的 toast 與紀錄', async ($, on) => {
+  const w = world(on, 650_000, 1_000_000, {}, [], 0, EN)
+  failHandoff = true
+  await stop($)
+  await w.clock.advance(0)
+  expect(w.toasts.some(t => t.includes('Handoff failed'))).toBe(true)
+  expect(w.logs.some(l => l.includes('handoff failed: nothing-to-fork: '))).toBe(true)
+})
+
+test('英文：面板與守門清單', async ($, on) => {
+  const w = world(on, 1000, 1_000_000, { 'guards:C--proj': [pushGuard('proposed')] }, [], 0, EN)
+  w.files.set(NOTES, PANEL_NOTES)
+  const ui = await openPanel($)
+  expect(await ui.find({ type: 'Text', text: /draft/ })).toBeDefined()
+  expect(await ui.find({ type: 'Button', text: /Approve/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Project notes and guards/ })).toBeDefined()
+  expect((await cmd($, 'guard')).text).toContain('[draft · block]')
+})
+
+// 語言的判斷順序：LC_ALL、LC_MESSAGES、LANG；C／POSIX 不算；Claude Code 的 language 設定優先
+const LANG_CASES: { name: string; env: Record<string, string>; setting?: unknown; want: 'zh' | 'en' }[] = [
+  { name: 'LANG zh_TW', env: { LANG: 'zh_TW.UTF-8' }, want: 'zh' },
+  { name: 'LANG zh_CN', env: { LANG: 'zh_CN.UTF-8' }, want: 'zh' },
+  { name: 'LANG en_US', env: { LANG: 'en_US.UTF-8' }, want: 'en' },
+  { name: 'LANG ja_JP', env: { LANG: 'ja_JP.UTF-8' }, want: 'en' },
+  { name: 'LC_ALL 蓋過 LANG', env: { LC_ALL: 'en_US.UTF-8', LANG: 'zh_TW.UTF-8' }, want: 'en' },
+  { name: 'LC_MESSAGES 蓋過 LANG', env: { LC_MESSAGES: 'zh_TW.UTF-8', LANG: 'en_US.UTF-8' }, want: 'zh' },
+  { name: 'LC_ALL=C 當成沒設', env: { LC_ALL: 'C', LANG: 'zh_TW.UTF-8' }, want: 'zh' },
+  { name: 'language 設定是中文', env: { LANG: 'en_US.UTF-8' }, setting: 'Traditional Chinese', want: 'zh' },
+  { name: 'language 設定是繁體中文', env: { LANG: 'en_US.UTF-8' }, setting: '繁體中文', want: 'zh' },
+  { name: 'language 設定是日文', env: { LANG: 'zh_TW.UTF-8' }, setting: 'japanese', want: 'en' },
+  { name: 'language 設定空白：看環境變數', env: { LANG: 'zh_TW.UTF-8' }, setting: '  ', want: 'zh' },
+]
+for (const c of LANG_CASES) {
+  test(`語言判斷：${c.name} → ${c.want}`, async ($, on) => {
+    const w = world(on, 100_000, 1_000_000, {}, [], 5, c.env)
+    if (c.setting !== undefined) on('settings.read', () => ({ value: { language: c.setting } }) as never)
+    await endTurn($)
+    expect(w.statuses.at(-1)).toBe(c.want === 'zh' ? '再 25 則整理筆記' : '25 more messages until notes update')
+  })
+}

@@ -35,6 +35,7 @@ node tools/status.mjs             # 確認各 session 已熱重載、看整理�
 - **面板只放要人判斷、按一下的事**：`/handoff panel` 開關輸入框上方的面板（`AbovePrompt`，畫面在 `hooks/panel.tsx`；不用 `Pane`，終端機全螢幕版面的 Pane 一定停靠側邊，維護者要放在輸入框上方），列守門草稿與核准、最近一次整理的變動、刪掉記錯的記憶或規則（按兩次確認，寫檔前備份到 `.ctx-handoff-backup/`）。狀態數字（快取、花費、context）留給 status line，不放面板（維護者 2026-10-06 決定）。render hook 只讀 `$.state` 的 `panelUi`（分頁、展開、確認中）與 `panelData`（資料快照），不讀檔也不讀 store；快照在開面板、按動作、`/handoff guard`、整理寫檔、守門觸發、回合結束時重算。每次重畫都讀檔會讓按鈕等 I/O，面板像卡死（2026-10-06）。
 - **`$.state` 放熱重載後還要接得上的 session 狀態**：面板與閒置計時（到期時間、刷新次數）。熱重載清掉計時器，`session.start` 依 `idle` 照原本的到期時間重排，過期超過 5 分鐘就不補。契約在 `types/index.d.ts`，加新的值要先宣告。跨 session 的資料仍放 `$.store`。
 - **指令名稱**：`/handoff` 被使用者自己的指令或 skill 佔用時，改註冊 `/ctx-handoff`。
+- **介面語言兩種（`UI_LANG`，字串在 `hooks/i18n.ts`）**：`auto` 依序看 Claude Code 的 `language` 設定、`LC_ALL`／`LC_MESSAGES`／`LANG`（C／POSIX 不算）、系統語系，`zh` 開頭用繁體中文，其餘英文；每個 hook 進來先 `await initLang($)`，之後 `t()` 同步取字串。只翻給人看的文字（狀態列、toast、紀錄、指令回覆、面板、交接提示）；狀態列、toast、紀錄不加 `[ctx-handoff]`，指令回覆照舊加。給模型的提示、經驗檔格式與標記（`NOTE_TAG`、標題、`做法／理由／根據`）、帶入新對話的記憶區塊不翻譯：它們是資料，改了舊檔讀不了，又不寫雙格式判斷，所以整理出的記憶內容一律是繁體中文。新字串兩種語言一起加；測試的 `world()` 預設把 `LANG` 釘成 `zh_TW.UTF-8`，不然結果跟著執行測試那台機器的語系。
 
 ## 平台事實（實測過）
 
