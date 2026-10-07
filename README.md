@@ -47,7 +47,7 @@ claude plugin install ctx-handoff@ctx-handoff-mod
 Start a new session and type `/handoff`. A status like this means it's installed:
 
 ```
-[ctx-handoff] context 12034 / threshold 600000 (window 1000000)
+context 12034 / threshold 600000 (window 1000000)
 Cache refresh on, refreshed 0/3 this idle period, timer not started
 ```
 
@@ -103,6 +103,8 @@ Once a rule comes up 3 times, `/handoff guard suggest` turns it into a check on 
 ### Panel
 
 `/handoff panel` opens a panel above the prompt: approve guards, see the latest notes update, delete wrong notes (press twice; backed up first), keep archived memories. Press ctrl+x tab, then 1–4 to switch tabs; run the command again to close it.
+
+<img src="docs/panel.png" width="560" alt="The panel above the prompt, on the Rules tab: tabs for guards (4), memories (52), rules (7) and the latest update, then rules such as checking the deployed version before announcing a release, each with how many times it came up. Text in Traditional Chinese.">
 
 ## Commands
 

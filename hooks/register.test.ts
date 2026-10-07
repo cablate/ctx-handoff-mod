@@ -1647,7 +1647,10 @@ test('面板：/handoff panel 在輸入框上方開關；問卷佔著時讓出�
   await again.press({ key: 'close' })
   expect(await again.find({ type: 'Text', text: 'ctx-handoff' })).toBeUndefined()
   await again.unmount()
-  await cmd($, 'panel')
+  // 引擎會在指令回覆前加 ctx-handoff:，回覆自己再加 [ctx-handoff] 就重複了（2026-10-07 面板截圖）
+  const opened = (await cmd($, 'panel')).text
+  expect(opened).toContain('面板已開')
+  expect(opened).not.toContain('[ctx-handoff]')
   expect((await cmd($, 'panel')).text).toContain('面板已關閉')
 })
 
@@ -1835,10 +1838,10 @@ test('英文：對話還短時的狀態列', async ($, on) => {
   expect(w.statuses.at(-1)).toBe('Conversation is short, notes not updated yet')
 })
 
-test('英文：/handoff 狀態與用法回覆保留 [ctx-handoff]，內文沒有中文', async ($, on) => {
+test('英文：/handoff 狀態與用法回覆不加 [ctx-handoff]（引擎會加 ctx-handoff:），內文沒有中文', async ($, on) => {
   const w = world(on, 650_000, 1_000_000, {}, [], 5, EN)
   const s = await cmd($, '')
-  expect(s.text).toStartWith('[ctx-handoff] context 650000 / threshold 600000 (window 1000000)')
+  expect(s.text).toStartWith('context 650000 / threshold 600000 (window 1000000)')
   expect(s.text).toContain('Cache refresh on')
   expect(s.text).toContain('/handoff now')
   expect(s.text).toContain('Guards: 0 on, 0 draft, 0 off')

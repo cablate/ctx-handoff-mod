@@ -1233,7 +1233,7 @@ async function guardCandidates($: EngineInterface) {
 
 async function suggestGuards($: EngineInterface) {
   const candidates = await guardCandidates($)
-  if (candidates.length === 0) return { text: `${tag} ${t().guard.noCandidates(GUARD_MIN_COUNT)}\n${await guardList($)}` }
+  if (candidates.length === 0) return { text: `${t().guard.noCandidates(GUARD_MIN_COUNT)}\n${await guardList($)}` }
   const rows = (await $.session.messages()) as readonly Row[]
   const calls = rows.flatMap(r => r.toolUses)
   const r = await $.model.complete({
@@ -1244,7 +1244,7 @@ async function suggestGuards($: EngineInterface) {
     system: guardPrompt(candidates, [...new Set(calls.map(c => c.tool))]),
     prompt: '依系統指示輸出 ACTIONS。',
   })
-  if (!r.isAnswered) return { text: `${tag} ${t().guard.suggestFailed(r.reason)}` }
+  if (!r.isAnswered) return { text: `${t().guard.suggestFailed(r.reason)}` }
   const { out, rejected } = parseGuards(r.text, new Set(candidates.map(c => c.name)))
   const guards = await loadGuards($)
   const at = await $.clock.now()
@@ -1256,7 +1256,7 @@ async function suggestGuards($: EngineInterface) {
   await $.store.set(await guardsKey($), [...guards, ...added])
   return {
     text: [
-      `${tag} ${t().guard.suggested(candidates.length, added.length)}`,
+      `${t().guard.suggested(candidates.length, added.length)}`,
       ...(rejected.length ? [`${t().ind}${t().guard.droppedLines(rejected.length, rejected.join(t().slashList))}`] : []),
       '',
       await guardList($),
@@ -1284,13 +1284,13 @@ async function guardCommand($: EngineInterface, args: string[]) {
   const [action = '', idText = '', modeText = ''] = args
   if (action === '') return { text: await guardList($) }
   if (action === 'suggest') return suggestGuards($)
-  const usage = `${tag} ${t().guard.usage}`
+  const usage = `${t().guard.usage}`
   const change = action === 'on' || action === 'off' || action === 'drop' ? action
     : action === 'mode' ? GUARD_MODES.find(m => m === modeText) : undefined
   if (change === undefined || !idText) return { text: usage }
   const g = await changeGuard($, Number(idText), change)
-  if (!g) return { text: `${tag} ${t().guard.missing(idText)}\n${await guardList($)}` }
-  return { text: `${tag} ${t().guard.changed(g.id, change === 'drop')}\n${await guardList($)}` }
+  if (!g) return { text: `${t().guard.missing(idText)}\n${await guardList($)}` }
+  return { text: `${t().guard.changed(g.id, change === 'drop')}\n${await guardList($)}` }
 }
 
 // 啟用／停用／刪除／換模式；回傳改到的那一條，找不到回 undefined
@@ -1314,7 +1314,7 @@ async function togglePanel($: EngineInterface) {
   }
   await update($, panelUi, u => ({ open, tab: u.tab, expanded: u.expanded, suggesting: u.suggesting }))
   return {
-    text: `${tag} ${open ? t().panelCmd.opened : t().panelCmd.closed}`,
+    text: `${open ? t().panelCmd.opened : t().panelCmd.closed}`,
   }
 }
 
@@ -1423,7 +1423,7 @@ function panelActions($: EngineInterface): PanelActions {
     suggest: () => run(async () => {
       if ((await read($, panelUi)).suggesting) return undefined
       await setUi(u => ({ ...u, suggesting: true }))
-      try { return (await suggestGuards($)).text.split('\n')[0]?.replace(`${tag} `, '') }
+      try { return (await suggestGuards($)).text.split('\n')[0]?.replace(``, '') }
       finally { await setUi(u => ({ ...u, suggesting: false })) }
     }),
     tab: tab => setUi(({ confirming: _c, note: _n, ...u }) => ({ ...u, tab })),
@@ -1565,13 +1565,13 @@ export const register: Register = on => {
       const wait = t().submit.wait(elapsed, Math.round(Math.max(HANDOFF_TIMEOUT_MS, DISTILL_GRACE_MS) / 60_000))
       // 只能暫存文字：mod 拿不到附件內容
       const attachNote = hasAttachments ? t().submit.attach : ''
-      if (!e.text.trim()) return { drop: `${tag} ${t().submit.busy(wait, attachNote)}` }
+      if (!e.text.trim()) return { drop: `${t().submit.busy(wait, attachNote)}` }
       // 以為卡住而重送：同樣的內容只送一次
       if (held.some(h => h.trim() === e.text.trim())) {
-        return { drop: `${tag} ${t().submit.dup(wait, attachNote)}` }
+        return { drop: `${t().submit.dup(wait, attachNote)}` }
       }
       held.push(e.text)
-      return { drop: `${tag} ${t().submit.held(wait, attachNote)}` }
+      return { drop: `${t().submit.held(wait, attachNote)}` }
     }
     idle?.cancel()
     idle = undefined
@@ -1596,10 +1596,10 @@ export const register: Register = on => {
       if (away.held === undefined) {
         // 只有附件、沒有文字：沒有可以暫存的內容，先請使用者選擇
         if (!e.text.trim()) {
-          return { drop: `${tag} ${t().submit.awayAttach}` }
+          return { drop: `${t().submit.awayAttach}` }
         }
         await $.store.set(key, { ...away, held: e.text } satisfies Away)
-        return { drop: `${tag} ${t().submit.awayHeld(hasAttachments)}` }
+        return { drop: `${t().submit.awayHeld(hasAttachments)}` }
       }
       // 再送一次＝選擇繼續舊對話；文字不同就把先前攔下的那則一起帶上
       await $.store.delete(key)
@@ -1632,7 +1632,7 @@ export const register: Register = on => {
         return r
       }
       case 'panel': return togglePanel($)
-      default: return { text: `${tag} ${t().cmd.unknown(sub)}\n${usageText()}` }
+      default: return { text: `${t().cmd.unknown(sub)}\n${usageText()}` }
     }
   })
 }
@@ -1648,7 +1648,7 @@ async function status($: EngineInterface) {
   const herr = (await $.store.get(`handoff:error:${pk}`)) as HandoffError | undefined
   const m = t()
   return [
-    `${tag} ${m.cmd.context(String(context.tokens ?? '?'), thresholdOf(context.window), context.window)}`,
+    `${m.cmd.context(String(context.tokens ?? '?'), thresholdOf(context.window), context.window)}`,
     m.cmd.refresh((await isRefreshOn($)) ? 'on' : 'off', refreshes, MAX_REFRESH, idle !== undefined),
     m.cmd.away(away ? (away.held === undefined ? 'yes' : 'held') : 'none'),
     m.cmd.latest(last ? { at: new Date(last.at).toLocaleString(), kind: last.kind, tokens: String(last.tokens ?? '?') } : undefined),
@@ -1665,25 +1665,25 @@ async function status($: EngineInterface) {
 }
 
 async function handoffNow($: EngineInterface) {
-  if (busy) return { text: `${tag} ${t().cmd.busy}` }
+  if (busy) return { text: `${t().cmd.busy}` }
   const { context } = await $.session.usage()
   const tokens = context.tokens ?? null
   beginPresent()
   $.clock.after(0, () => void present($, tokens, 'manual'))
-  return { text: `${tag} ${t().cmd.nowStarted}` }
+  return { text: `${t().cmd.nowStarted}` }
 }
 
 async function handoffDry($: EngineInterface) {
-  if (busy) return { text: `${tag} ${t().cmd.busy}` }
+  if (busy) return { text: `${t().cmd.busy}` }
   const { context } = await $.session.usage()
   busy = true
   try {
     const text = await makeHandoff($, 'dry', context.tokens ?? null)
-    if (text === undefined) return { text: `${tag} ${t().cmd.dryFailed}` }
+    if (text === undefined) return { text: `${t().cmd.dryFailed}` }
     const list = ((await $.store.get(`handoffs:${await projectKey($)}`)) as Saved[] | undefined) ?? []
     const usage = list.at(-1)?.usage
     return {
-      text: `${tag} ${t().cmd.dryDone(String(context.tokens ?? '?'))}\n` +
+      text: `${t().cmd.dryDone(String(context.tokens ?? '?'))}\n` +
         `${usage ? describeUsage(usage) : ''}\n\n${text}`,
     }
   } finally {
@@ -1695,27 +1695,27 @@ async function distillCommand($: EngineInterface, arg: string) {
   if (arg === 'on' || arg === 'off') {
     await $.store.set('distill', arg === 'on')
     await showDistillStatus($)
-    return { text: `${tag} ${t().cmd.distillSet(arg)}` }
+    return { text: `${t().cmd.distillSet(arg)}` }
   }
-  if (arg !== '') return { text: `${tag} ${t().cmd.distillUsage}` }
-  if (distilling) return { text: `${tag} ${t().cmd.distilling}` }
+  if (arg !== '') return { text: `${t().cmd.distillUsage}` }
+  if (distilling) return { text: `${t().cmd.distilling}` }
   const r = await distill($, t().distill.why.manual)
   if (r === undefined || !r.isAnswered || distillFailed) {
-    return { text: `${tag} ${t().cmd.distillNone}\n${await distillStatus($)}` }
+    return { text: `${t().cmd.distillNone}\n${await distillStatus($)}` }
   }
-  return { text: `${tag} ${t().cmd.distillDone}\n${await distillStatus($)}` }
+  return { text: `${t().cmd.distillDone}\n${await distillStatus($)}` }
 }
 
 async function refreshCommand($: EngineInterface, arg: string) {
-  if (arg !== 'on' && arg !== 'off') return { text: `${tag} ${t().cmd.refreshNow((await isRefreshOn($)) ? 'on' : 'off')}` }
+  if (arg !== 'on' && arg !== 'off') return { text: `${t().cmd.refreshNow((await isRefreshOn($)) ? 'on' : 'off')}` }
   await $.store.set('refresh', arg === 'on')
-  return { text: `${tag} ${t().cmd.refreshSet(arg)}` }
+  return { text: `${t().cmd.refreshSet(arg)}` }
 }
 
 async function resume($: EngineInterface) {
   const key = awayKey(await $.session.id())
   const away = (await $.store.get(key)) as Away | undefined
-  if (away === undefined) return { text: `${tag} ${t().cmd.noAway}` }
+  if (away === undefined) return { text: `${t().cmd.noAway}` }
   await $.store.delete(key)
   const intro = `${tag} ${away.held === undefined ? t().cmd.resumeIntro : t().cmd.resumeIntroHeld}`
   const handoff = away.held === undefined ? away.handoff : `${away.handoff}\n\n${t().cmd.resumeHeld}\n${away.held}`
@@ -1738,7 +1738,7 @@ ${handoff}`)
       .catch(err => $.ui.log(t().cmd.resumeFailedLog(String(err))))
       .finally(() => { busy = false })
   })
-  return { text: `${tag} ${t().cmd.resuming}` }
+  return { text: `${t().cmd.resuming}` }
 }
 
 // 重新送出沒送達的 handoff：只用這個 process 自己的紀錄，不碰其他 session 的 pendingSubmit；不 /clear
@@ -1755,7 +1755,7 @@ async function resend($: EngineInterface) {
 
 ${lastHandoff.text}`
   }
-  if (text === undefined) return { text: `${tag} ${t().cmd.nothingToResend}` }
+  if (text === undefined) return { text: `${t().cmd.nothingToResend}` }
   const body = text
   $.clock.after(0, () => {
     void submitText($, body)
@@ -1765,16 +1765,16 @@ ${lastHandoff.text}`
       })
       .catch(err => $.ui.log(t().cmd.resendFailed(String(err))))
   })
-  return { text: `${tag} ${t().cmd.resending}` }
+  return { text: `${t().cmd.resending}` }
 }
 
 async function keepOld($: EngineInterface) {
   const key = awayKey(await $.session.id())
   const away = (await $.store.get(key)) as Away | undefined
-  if (away === undefined) return { text: `${tag} ${t().cmd.noAway}` }
+  if (away === undefined) return { text: `${t().cmd.noAway}` }
   await $.store.delete(key)
   const msg = away.held
-  if (msg === undefined) return { text: `${tag} ${t().cmd.discarded}` }
+  if (msg === undefined) return { text: `${t().cmd.discarded}` }
   $.clock.after(0, () => void submitText($, msg).catch(err => $.ui.log(t().cmd.sendHeldFailed(String(err)))))
-  return { text: `${tag} ${t().cmd.discardedSend}` }
+  return { text: `${t().cmd.discardedSend}` }
 }

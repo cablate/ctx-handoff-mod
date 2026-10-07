@@ -21,6 +21,7 @@ Notable changes to ctx-handoff. Versions follow the `version` in `.claude-plugin
 
 ### Fixed
 
+- Command replies no longer repeat the `[ctx-handoff]` prefix that Claude Code already adds.
 - The idle cache timer picks up again after the mod hot-reloads.
 - The panel no longer reads files on every redraw, which made buttons feel stuck.
 
