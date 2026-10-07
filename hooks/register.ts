@@ -15,6 +15,7 @@ import { anchorOf, transcriptOf } from './transcript'
 import type { Row } from './transcript'
 import { CONFIG_PREFIX, DISTILL_EFFORT, DISTILL_EVERY, DISTILL_GRACE_MS, DISTILL_MAX_TOKENS, DISTILL_TIMEOUT_MS, GUARD_MAX_TOKENS, HANDOFF_TIMEOUT_MS, KEEP, DEFER_CAP_EXTRA, DEFER_CAP_RATIO, RELOAD_GRACE_MS, RETRY_MS, RETRY_TURNS, STOPPED, cfg, optionsOf, resetConfig, resolveConfig, thresholdOf } from './config'
 import { resetRuntime, rt } from './runtime'
+import { doneCheck, freshWork, noteCall, trackFailure } from './loops'
 import { awayKey, describeUsage, pendingKey, pruneSeen } from './records'
 import type { Away, DistillError, DistillLast, HandoffError, Kind, Saved, Usage } from './records'
 import { HANDOFF_PROMPT, forkFailure, heldBlock } from './handoff'
@@ -681,6 +682,41 @@ function panelActions($: EngineInterface): PanelActions {
   }
 }
 
+// 工具呼叫結束後的觀察（不碰 $，失敗一律放行原結果，絕不丟例外、不擋呼叫）：
+// A 同一個工具連續兩次因同樣原因失敗，在第 2 次的結果後面附一段提醒（context，模型看得到、使用者看不到）；
+// B 記下這一輪的改檔與驗證，給回合結束時的檢查用
+function watchCall<R extends { deny?: string; isError?: boolean; text?: string; result?: unknown; context?: readonly string[] }>(
+  e: { tool: string },
+  r: R,
+): R {
+  try {
+    if (r.deny !== undefined) return r
+    const failed = r.isError === true
+    if (cfg.doneCheck) noteCall(rt.work, e.tool, e as Record<string, unknown>, failed)
+    if (!cfg.retryNudge) return r
+    const text = r.text ?? (typeof r.result === 'string' ? r.result : undefined)
+    const agent = (e as { agentId?: string }).agentId ?? ''
+    const nudge = trackFailure(rt.streaks, `${agent}|${e.tool}`, e.tool, failed, text)
+    return nudge ? { ...r, context: [...(r.context ?? []), nudge] } : r
+  } catch {
+    return r
+  }
+}
+
+// 回合結束時說完成了，但這一輪改檔之後沒有跑任何測試或檢查：回傳要擋下停止的理由（每回合最多一次）。
+// 紀錄用完就清；擋下的那次保留 reminded，之後同一回合的停止不再擋。使用者中斷的回合 Stop 不會觸發，
+// 紀錄由 turn.complete（isAborted）與下一則人類訊息清掉
+function doneReason(e: { stop_hook_active?: boolean; last_assistant_message?: string }): string | undefined {
+  try {
+    if (cfg.doneCheck) {
+      const reason = doneCheck(rt.work, e.last_assistant_message, e.stop_hook_active === true)
+      if (reason) return reason
+    }
+  } catch {}
+  rt.work = freshWork()
+  return undefined
+}
+
 export const register: Register = on => {
   resetRuntime()
   resetConfig()
@@ -768,8 +804,8 @@ export const register: Register = on => {
       await initLang($)
       $.ui.log(t().guard.checkFailed(String(err)))
     }
-    if (!hit) return next(e)
     await initLang($)
+    if (!hit) return watchCall(e, await next(e))
     await recordHit($, hit.id)
     const head = `${tag} ${t().guard.head(hit.id, hit.rule, hit.message)}`
     if (hit.mode === 'deny') {
@@ -777,7 +813,7 @@ export const register: Register = on => {
       return { deny: `${head}\n${t().guard.denyHint(hit.id)}` }
     }
     const r = await next(e)
-    return r.deny === undefined ? { ...r, context: [...(r.context ?? []), head] } : r
+    return watchCall(e, r.deny === undefined ? { ...r, context: [...(r.context ?? []), head] } : r)
   })
 
   // 面板沒開、或問卷佔著輸入框上方時，交給下層（其他 plugin 或引擎自己的）
@@ -794,6 +830,8 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     await initLang($)
     const out = await next(e)
+    // 被中斷的回合沒有 Stop：清掉這一輪的改檔紀錄，免得算到下一輪
+    if (e.agentId === undefined && e.isAborted) rt.work = freshWork()
     if (e.agentId !== undefined || rt.busy) return out
     // 別的 session 可能改了經驗檔或守門：每個回合結束重算一次面板快照（面板沒開時只讀一個 state）
     await refreshPanel($)
@@ -822,6 +860,12 @@ export const register: Register = on => {
     const out = await next(e)
     // 別的 Stop hook 要求繼續：回合其實沒結束，等它真正停下的那次 Stop 再判斷
     if (out.block !== undefined) return out
+    // 說完成了卻沒驗證：擋下這次停止，回合還沒結束，不判斷交接
+    const reason = e.agent_id === undefined ? doneReason(e) : undefined
+    if (reason !== undefined) {
+      $.ui.log(t().loops.doneLog)
+      return { ...out, block: reason }
+    }
     try {
       await onStop($, e)
     } catch (err) {
@@ -853,6 +897,8 @@ export const register: Register = on => {
     rt.idle?.cancel()
     rt.idle = undefined
     rt.refreshes = 0
+    // 新的一輪從使用者的新訊息開始：改檔與驗證紀錄重算
+    rt.work = freshWork()
     await update($, idleState, () => null)
     const sid = await $.session.id()
     // 背景整理的錨點：下次從這則訊息之後開始

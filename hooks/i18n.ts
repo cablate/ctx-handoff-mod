@@ -133,6 +133,12 @@ const zh = {
     stopFailed: (err: string) => `Stop 判斷失敗：${err}`,
   },
 
+  // 防呆提醒
+  loops: {
+    doneLog: '說完成了，但這一輪改檔之後沒有跑測試或檢查，已請 AI 先驗證',
+    status: (retry: string, done: string) => `防呆提醒：重複失敗 ${retry}，完成前驗證 ${done}`,
+  },
+
   // session 啟動
   start: {
     description: 'ctx-handoff: 狀態；now／dry／distill／resume／continue／resend／refresh on|off／distill on|off',
@@ -434,6 +440,11 @@ const en: Messages = {
     capLog: (tokens, cap, parts) => `context ${tokens} reached the limit of ${cap}; not waiting for ${parts} any longer, handing off now`,
     retryLog: tokens => `context ${tokens} reached the threshold, but the last handoff failed recently; will try again later`,
     stopFailed: err => `Stop check failed: ${err}`,
+  },
+
+  loops: {
+    doneLog: 'Said done, but no test or check ran after the edits this turn; asked Claude to verify first',
+    status: (retry, done) => `Nudges: repeated failure ${retry}, verify before done ${done}`,
   },
 
   start: {

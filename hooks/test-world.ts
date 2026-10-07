@@ -42,6 +42,8 @@ const fresh = () => ({
   onClear: undefined as (() => void | Promise<void>) | undefined,
   // 下層 Stop hook 要求繼續（例如另一個 plugin 擋下停止）
   stopBlock: undefined as string | undefined,
+  // tool.call 底層的工具回覆：回 undefined 就是成功（{ result: 'ok' }）；測試用它模擬工具失敗
+  toolReply: undefined as ((e: { tool: string; command?: string }) => { isError: true; result: string; text: string } | undefined) | undefined,
   curSid: 'S1',
   // session 啟動資料夾（P1）與目前工作目錄
   curRoot: 'C:\\proj',
@@ -94,7 +96,7 @@ export const world = (on: On, tokens: number, window = 1_000_000, store: Record<
   on('session.root', () => ({ value: ctl.curRoot }))
   on('session.cwd', () => ({ value: ctl.curCwd }))
   // 工具本身：什麼都不做，只讓 tool.call 能走到本 plugin 的 hook
-  on('tool.call', () => ({ result: 'ok' }))
+  on('tool.call', (_$, e) => ctl.toolReply?.(e as { tool: string; command?: string }) ?? { result: 'ok' })
   // 引擎會把路徑轉成原生格式（Windows 反斜線），比對前先統一成斜線。
   // POSIX 上引擎把 C:/... 當相對路徑，前面接工作目錄（/w/C:/...）；測試資料用 Windows 路徑，所以去掉磁碟代號前面的部分；反過來，Windows 上引擎替 /home/... 這種 POSIX 路徑補上磁碟代號（C:/home/...），也去掉
   const norm = (p: string) => p.split(String.fromCharCode(92)).join('/').replace(/^.*?\/(?=[A-Za-z]:\/)/, '').replace(/^[A-Za-z]:(?=\/(?:home|opt)\/)/, '')

@@ -102,6 +102,13 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 
 同一條規則出現 3 次以上，`/handoff guard suggest` 會把它寫成工具呼叫的檢查，例如「git push 前沒跑測試」，可設成擋下或提醒。**要你 `/handoff guard on N` 核准才生效**；檢查本身出錯就放行。
 
+### 兩個防呆提醒
+
+預設都開；都只是對 Claude 說一句話，不會擋你的工具。
+
+- **重複失敗：** 同一個工具連續兩次因同樣原因失敗時，第二次的結果會附一句話，請 Claude 先找出原因、換個做法，不要原樣重試。每一段連續失敗只提醒一次，該工具成功就重新算。設定：`retry_nudge`。
+- **說完成卻沒驗證：** Claude 說做完了、這一輪改過程式檔、之後沒跑任何測試、建置或檢查時，會請它先驗證並附上結果（沒辦法驗證就說明哪些沒驗證），一個回合最多一次。只改文件（`.md`、`.txt`）或你中斷的回合不算。設定：`done_check`。
+
 ### 面板
 
 `/handoff panel` 在輸入框上方開面板，可以核准守門、看最近整理改了什麼、刪掉記錯的筆記（按兩次確認，會先備份）、把封存的記憶留下。ctrl+x tab 後按 1–4 切分頁，再打一次指令關閉。
@@ -145,6 +152,8 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 | `min_tokens` | `30000` | 對話小於這個值時，不保持快取、不產生離席交接、不整理筆記 |
 | `notes_model` | `claude-sonnet-5-5` | 整理筆記用的模型：Sonnet 5.5 或 Opus 5.5 |
 | `language` | `auto` | 介面語言：`auto`、`en` 或 `zh-TW` |
+| `retry_nudge` | `true` | 同一個失敗連續兩次時，請 Claude 換個做法 |
+| `done_check` | `true` | Claude 改了檔案、沒跑測試或檢查就說完成時，請它先驗證一次 |
 
 超出允許範圍的值會被拉回範圍內。保持快取與專案筆記的開關用 `/handoff refresh on|off`、`/handoff distill on|off`。
 
@@ -172,7 +181,7 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 
 | 輸出裡的項目 | 用途 |
 |---|---|
-| `tool.call` | 套用你核准的守門；沒有核准任何守門時什麼都不做 |
+| `tool.call` | 套用你核准的守門（沒核准就不擋）；留意工具是否連續兩次失敗，以及這一輪改了哪些檔案、跑了哪些測試 |
 | `prompt.submit`、`prompt.context` | 交接中暫存你的訊息；把專案筆記帶入新對話 |
 | `$.session.messages`、`$.model.complete`、`$.model.fork` | 讀對話來寫筆記與交接摘要 |
 | `$.fs.read`、`$.fs.write`、`$.fs.exists` | 讀寫筆記檔與備份；確認專案是不是 git repo |
@@ -180,7 +189,7 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 | `$.env.get` | 讀三個環境變數 `CLAUDE_CONFIG_DIR`、`HOME`、`USERPROFILE`，只用來找到你的 `~/.claude` 資料夾，不需要另外設定 |
 | `$.tool.register` | 給 Claude 一個工具 `mark_in_project`，用來回報規則放進 repo 的哪裡 |
 | `$.settings.read`、`$.config.list`、`config.set` | 讀 Claude Code 的 `language` 設定與這個 plugin 自己的設定（`pluginConfigs`）；你改設定時重新讀取 |
-| 其餘：`session.start`、`turn.complete`、`classic.Stop`、`command.run`、`$.command.register`、`ui.render`、`$.store`、`$.state`、`$.clock`、`$.ui`、`$.agent.list`、`$.session.*` | 日常運作：計時、`/handoff` 指令、狀態列、面板與提示、自己的儲存空間，以及交接前確認 Claude 和子代理都做完了 |
+| 其餘：`session.start`、`turn.complete`、`classic.Stop`、`command.run`、`$.command.register`、`ui.render`、`$.store`、`$.state`、`$.clock`、`$.ui`、`$.agent.list`、`$.session.*` | 日常運作：計時、`/handoff` 指令、狀態列、面板與提示、自己的儲存空間，交接前確認 Claude 和子代理都做完了，以及 Claude 說完成卻沒跑檢查時請它先驗證一次 |
 
 它自己不發網路請求，也不啟動其他程式（沒有 `$.http` 或 `$.process` 呼叫）。想在不載入它或任何 mod 的情況下開 session，用 `claude --safe-mode` 啟動。另見 [`SECURITY.md`](SECURITY.md)。
 

@@ -1,6 +1,8 @@
 // 這個 process 內 register.ts 用的可變狀態（熱重載會清掉；要接得上的放 $.state）。集中成一個物件，不碰 $
 import type { Timer } from 'claude-code'
 import type { Change } from './notes'
+import { freshWork } from './loops'
+import type { Streak, Work } from './loops'
 
 export const rt = {
   idle: undefined as Timer | undefined,
@@ -34,6 +36,9 @@ export const rt = {
   guardsKeyCache: undefined as string | undefined,
   // 設定與介面語言：第一次用到時讀一次就記住（熱重載會重算）
   langReady: undefined as Promise<void> | undefined,
+  // 防呆提醒：各工具最近一段連續失敗，與這一輪的改檔／驗證紀錄。熱重載會清掉，清掉只是少一次提醒
+  streaks: new Map<string, Streak>(),
+  work: freshWork() as Work,
 }
 
 // 重設程序內狀態（模組重新載入或測試重跑時）；distilling、distillFailed、presentStartedAt 沿用原本不重設的行為
@@ -56,4 +61,6 @@ export function resetRuntime() {
   rt.promoteTool = undefined
   rt.guardsKeyCache = undefined
   rt.langReady = undefined
+  rt.streaks.clear()
+  rt.work = freshWork()
 }

@@ -30,6 +30,7 @@ export function statusText(s: StatusInput) {
     ...(rt.snapshot ? [m.cmd.background(rt.snapshot.tasks, rt.snapshot.oneShot, rt.snapshot.recurring)] : []),
     s.distill,
     s.guards,
+    m.loops.status(cfg.retryNudge ? 'on' : 'off', cfg.doneCheck ? 'on' : 'off'),
     '',
     usageText(),
   ].join('\n')

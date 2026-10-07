@@ -7,6 +7,7 @@ Notable changes to ctx-handoff. Versions follow the `version` in `.claude-plugin
 ### Added
 
 - **Better handoff summaries:** the summary now separates verified work from unverified changes, lists approaches that failed, notes anything still running or unsaved, keeps limits you set during the work, and ends with one concrete next step.
+- **Two safety nudges, on by default:** when the same tool call fails twice in a row for the same reason, Claude is told to change approach instead of retrying (`retry_nudge`); when Claude says the work is done after editing code files but ran no test, build or check, it is asked once to verify first (`done_check`). `/handoff` shows both switches.
 
 ### Changed
 

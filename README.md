@@ -104,6 +104,13 @@ Only new conversation since the last update goes to Sonnet 5.5 at low effort; a 
 
 Once a rule comes up 3 times, `/handoff guard suggest` turns it into a check on tool calls, e.g. "git push without running tests", set to block or remind. **Nothing applies until you approve it with `/handoff guard on N`**; if a check fails, the call goes through.
 
+### Two safety nudges
+
+Both are on by default; each is a plain message to Claude, never a block on your tools.
+
+- **Repeated failure:** if the same tool fails twice in a row for the same reason, the second result carries a note telling Claude to find the cause and change approach instead of retrying as is. Once per streak; a success of that tool starts over. Setting: `retry_nudge`.
+- **"Done" without checking:** if Claude says the work is done, edited code files this turn, and ran no test, build or check afterwards, it is asked once to verify and show the result (or say what it couldn't verify). Edits to docs (`.md`, `.txt`) and turns you interrupt don't count. Setting: `done_check`.
+
 ### Panel
 
 `/handoff panel` opens a panel above the prompt: approve guards, see the latest notes update, delete wrong notes (press twice; backed up first), keep archived memories. Press ctrl+x tab, then 1–4 to switch tabs; run the command again to close it.
@@ -147,6 +154,8 @@ For a clone, use the key `ctx-handoff@inline` instead.
 | `min_tokens` | `30000` | Below this, skip cache keeping, away handoffs and notes |
 | `notes_model` | `claude-sonnet-5-5` | Model for project notes: Sonnet 5.5 or Opus 5.5 |
 | `language` | `auto` | Message language: `auto`, `en` or `zh-TW` |
+| `retry_nudge` | `true` | Tell Claude to change approach after the same failure twice in a row |
+| `done_check` | `true` | Ask Claude to verify once when it says "done" after editing files without running a test or check |
 
 Values outside the allowed range are pulled back into it. Cache keeping and project notes are switched with `/handoff refresh on|off` and `/handoff distill on|off`.
 
@@ -174,7 +183,7 @@ Values outside the allowed range are pulled back into it. Cache keeping and proj
 
 | In the output | Why |
 |---|---|
-| `tool.call` | Applies guards you approved; does nothing until you approve one |
+| `tool.call` | Applies guards you approved (none until you approve one); notices a tool failing twice in a row and which files were edited or tests run this turn |
 | `prompt.submit`, `prompt.context` | Holds your message during a handoff; loads project notes into a new conversation |
 | `$.session.messages`, `$.model.complete`, `$.model.fork` | Reads the conversation to write notes and handoff summaries |
 | `$.fs.read`, `$.fs.write`, `$.fs.exists` | Reads and writes the notes file and its backups; checks whether the project is a git repo |
@@ -182,7 +191,7 @@ Values outside the allowed range are pulled back into it. Cache keeping and proj
 | `$.env.get` | Reads three environment variables, `CLAUDE_CONFIG_DIR`, `HOME` and `USERPROFILE`, only to find your `~/.claude` folder. Nothing needs to be set |
 | `$.tool.register` | Gives Claude one tool, `mark_in_project`, to report where it put a rule in your repo |
 | `$.settings.read`, `$.config.list`, `config.set` | Reads Claude Code's `language` setting and this plugin's own settings (`pluginConfigs`); rereads them when you change one |
-| The rest: `session.start`, `turn.complete`, `classic.Stop`, `command.run`, `$.command.register`, `ui.render`, `$.store`, `$.state`, `$.clock`, `$.ui`, `$.agent.list`, `$.session.*` | Bookkeeping: timers, the `/handoff` command, status line, panel and toasts, its own storage, and checking that Claude and its subagents are done before a handoff |
+| The rest: `session.start`, `turn.complete`, `classic.Stop`, `command.run`, `$.command.register`, `ui.render`, `$.store`, `$.state`, `$.clock`, `$.ui`, `$.agent.list`, `$.session.*` | Bookkeeping: timers, the `/handoff` command, status line, panel and toasts, its own storage, checking that Claude and its subagents are done before a handoff, and asking Claude once to verify when it says "done" without having run a check |
 
 It makes no network requests of its own and starts no programs (no `$.http` or `$.process` calls). To run a session without it, or any other mod, start Claude Code with `claude --safe-mode`. See also [`SECURITY.md`](SECURITY.md).
 

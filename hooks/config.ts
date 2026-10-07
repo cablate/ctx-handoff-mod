@@ -14,10 +14,12 @@ type Config = {
   notesModel: string
   // 介面語言（狀態列、toast、紀錄、指令回覆、面板）：auto 先看 Claude Code 的 language 設定，沒設就看系統語系
   language: 'auto' | Lang
+  // 防呆提醒：同樣的失敗連續兩次就提醒換做法；說完成了卻沒驗證就擋一次
+  retryNudge: boolean; doneCheck: boolean
 }
 const CONFIG_DEFAULTS: Config = {
   threshold: 600_000, windowRatio: 0.8, idleMs: 55 * 60_000, maxRefresh: 3, minTokens: 30_000,
-  notesModel: 'claude-sonnet-5-5', language: 'auto',
+  notesModel: 'claude-sonnet-5-5', language: 'auto', retryNudge: true, doneCheck: true,
 }
 export const CONFIG_PREFIX = 'ctx-handoff.'
 // 目前的設定：只改欄位、不換物件，各檔 import 到的是同一份
@@ -68,6 +70,10 @@ export function resolveConfig(
     const v = get(field)
     return typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : d
   }
+  const bool = (field: string, d: boolean) => {
+    const v = get(field)
+    return typeof v === 'boolean' ? v : d
+  }
   const d = CONFIG_DEFAULTS
   const model = get('notes_model')
   const lang = get('language')
@@ -79,5 +85,7 @@ export function resolveConfig(
     minTokens: num('min_tokens', 0, 500_000, d.minTokens),
     notesModel: typeof model === 'string' && model.trim() ? model.trim() : d.notesModel,
     language: lang === 'en' || lang === 'zh-TW' ? lang : 'auto',
+    retryNudge: bool('retry_nudge', d.retryNudge),
+    doneCheck: bool('done_check', d.doneCheck),
   }
 }

@@ -77,6 +77,18 @@
         "zh-TW"
       ],
       "default": "auto"
+    },
+    "retry_nudge": {
+      "type": "boolean",
+      "title": "Nudge after a repeated failure",
+      "description": "When the same tool call fails twice in a row for the same reason, tell Claude to change approach instead of retrying.",
+      "default": true
+    },
+    "done_check": {
+      "type": "boolean",
+      "title": "Check \"done\" claims",
+      "description": "When Claude says the work is done but edited files and ran no test or check since, ask it once to verify first.",
+      "default": true
     }
   },
   "types": "./types/index.d.ts"
