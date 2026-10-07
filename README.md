@@ -47,8 +47,8 @@ claude plugin install ctx-handoff@ctx-handoff-mod
 Start a new session and type `/handoff`. A status like this means it's installed:
 
 ```
-[ctx-handoff] context 12034 / 門檻 600000（視窗 1000000）
-快取刷新 on，本次閒置已刷新 0/3，計時器未啟動
+[ctx-handoff] context 12034 / threshold 600000 (window 1000000)
+Cache refresh on, refreshed 0/3 this idle period, timer not started
 ```
 
 **Updates** aren't automatic. Run `claude plugin update ctx-handoff@ctx-handoff-mod`, or turn on auto-update under **Marketplaces** in `/plugin`.
