@@ -1579,15 +1579,10 @@ export const register: Register = on => {
         $.ui.log(t().start.registerFailed(String(err2)))
       }
     }
-    // 工具清單在快取前綴裡：已經開始的對話（熱重載）中途加工具，整段快取都要重寫，所以只在第一個請求之前註冊；
-    // 沒註冊到的 process 不交代放進專案，等下次開 Claude Code
+    // 每次都註冊同一份定義：熱重載或重開 session（resume）時沒註冊，引擎會把工具撤掉（not_configured），
+    // 工具清單反而變了，AI 也沒得回報。延後載入的 MCP 工具中途加入只多一筆可用提示，不動快取前綴
     try {
-      if ((await $.session.turns()) === 0) {
-        promoteTool = (await $.tool.register({ name: PROMOTE_TOOL, description: PROMOTE_DESCRIPTION, inputSchema: PROMOTE_SCHEMA })).tool
-      } else {
-        // 熱重載前已註冊過的，接回來繼續處理（呼叫沒有 hook 接會失敗）
-        promoteTool = (await $.tool.list()).find(x => x.name.endsWith(`__${PROMOTE_TOOL}`) && x.name.includes("ctx-handoff"))?.name
-      }
+      promoteTool = (await $.tool.register({ name: PROMOTE_TOOL, description: PROMOTE_DESCRIPTION, inputSchema: PROMOTE_SCHEMA })).tool
     } catch (err) {
       $.ui.log(t().start.toolFailed(String(err)))
     }

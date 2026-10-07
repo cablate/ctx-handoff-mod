@@ -1931,17 +1931,9 @@ const promoteBlockOf = async ($: Engine) =>
   (await $.prompt.context({ blocks: [] })).blocks.find(b => b.name === 'ctxHandoffPromote')?.text
 const markInProject = ($: Engine, items: unknown[]) => $.tool.call({ tool: PROMOTE_TOOL_NAME, items } as never)
 
-test('放進專案：工具只在對話開始前註冊；熱重載進已經開始的對話不註冊（避免整段快取重寫），也不交代', async ($, on) => {
+// 2026-10-07 ie 專案：session 重開（resume）後回合數不是 0，舊程式就不註冊，引擎把工具撤掉，AI 只好直接改 store 檔
+test('放進專案：已經有對話紀錄的 session（重開或熱重載）也照樣註冊工具並交代', async ($, on) => {
   const w = world(on, 100_000, 1_000_000, {}, [], 4)
-  w.files.set(NOTES, PROMOTE_NOTES)
-  w.files.set('C:/proj/.git', '')
-  await startSession($)
-  expect(await promoteBlockOf($)).toBeUndefined()
-})
-
-test('放進專案：熱重載前已註冊過工具的對話，接回來繼續處理', async ($, on) => {
-  const w = world(on, 100_000, 1_000_000, {}, [], 4)
-  on('tool.list', () => ({ value: [{ name: PROMOTE_TOOL_NAME, description: '' }] }) as never)
   w.files.set(NOTES, PROMOTE_NOTES)
   w.files.set('C:/proj/.git', '')
   await startSession($)
