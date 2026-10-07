@@ -1955,7 +1955,7 @@ test('放進專案：git repo 裡，出現 3 次以上的規則與啟用中的�
   w.files.set('C:/proj/.git', '')
   await startSession($)
   const text = (await promoteBlockOf($)) ?? ''
-  expect(text).toContain('先完成使用者這次交代的事')
+  expect(text).toContain('請在這一輪回覆結束前處理：先做完使用者這次交代的事')
   expect(text).toContain('不要 commit 或 push')
   expect(text).toContain(PROMOTE_TOOL_NAME)
   expect(text).toContain('- 規則「正式站刪除要斷言筆數」（4 次）：DELETE 前先在 DO 區塊斷言筆數')

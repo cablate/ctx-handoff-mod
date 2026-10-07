@@ -1477,7 +1477,7 @@ async function promoteBlock($: EngineInterface, notes: Notes) {
   for (const c of items) asked[c.key] = { asks: (asked[c.key]?.asks ?? 0) + 1, at: now }
   await $.store.set(await promoteKey($), asked)
   return [
-    `${NOTE_TAG} 下面這些做法已在過去的對話裡被證實多次，但還沒寫進這個 repo。先完成使用者這次交代的事，告一段落後再順手處理；使用者在處理緊急問題、或這次不在這個 repo 工作時，就先不要做。`,
+    `${NOTE_TAG} 下面這些做法已在過去的對話裡被證實多次，但還沒寫進這個 repo。請在這一輪回覆結束前處理：先做完使用者這次交代的事，再順手把它們放進 repo，不用先問使用者；只有使用者明說正在處理緊急問題時才延到之後的回合。`,
     '1. 依專案慣例選位置（AGENTS.md、CLAUDE.md，或既有的 .claude/hooks、守門腳本）。先讀現有內容：已有相同的規則就不要重複寫，只回報它在哪。',
     '2. 守門（會擋下或提醒的工具呼叫）優先併進專案既有的 hook；寫成 hook 時實際觸發一次，確認有效。',
     '3. 只改檔，不要 commit 或 push。',
