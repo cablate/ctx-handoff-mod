@@ -109,7 +109,7 @@ Once a rule comes up 3 times, `/handoff guard suggest` turns it into a check on 
 Both are on by default; each is a plain message to Claude, never a block on your tools.
 
 - **Repeated failure:** if the same tool fails twice in a row for the same reason, the second result carries a note telling Claude to find the cause and change approach instead of retrying as is. Once per streak; a success of that tool starts over. Setting: `retry_nudge`.
-- **"Done" without checking:** if Claude says the work is done, edited code files this turn, and ran no test, build or check afterwards, it is asked once to verify and show the result (or say what it couldn't verify). Edits to docs (`.md`, `.txt`) and turns you interrupt don't count. Setting: `done_check`.
+- **"Done" without checking:** if Claude says the work is done, edited code files this turn, and ran no test, build or check afterwards, it is asked once to verify and show the result (or say what it couldn't verify). Edits to docs (`.md`, `.txt`) and turns you interrupt don't count. Claude Code shows the request as "Stop hook feedback" and may flag it as a Stop hook error; that is this reminder, not a failure. Setting: `done_check`.
 
 ### Panel
 
