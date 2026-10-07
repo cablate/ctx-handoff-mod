@@ -2,6 +2,8 @@
 
 [English](README.md)
 
+[![check](https://github.com/cablate/ctx-handoff-mod/actions/workflows/check.yml/badge.svg)](https://github.com/cablate/ctx-handoff-mod/actions/workflows/check.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **讓 Claude Code 的長對話自己接續下去，並記住你教過它的事。**
 
 用 Claude Code 做長時間的工作，常會遇到三件麻煩事：

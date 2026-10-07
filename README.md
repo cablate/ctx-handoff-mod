@@ -2,6 +2,8 @@
 
 [繁體中文](README.zh-TW.md)
 
+[![check](https://github.com/cablate/ctx-handoff-mod/actions/workflows/check.yml/badge.svg)](https://github.com/cablate/ctx-handoff-mod/actions/workflows/check.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **Keep long Claude Code conversations going on their own, and have Claude remember what you taught it.**
 
 Long Claude Code sessions run into three chores:
