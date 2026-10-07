@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 推送前一次跑完：plugin validate、plugin test、tsc、公開資訊掃描（檔案與 git 歷史）。只印每步一行摘要，失敗才印該步的尾端輸出。
+// 推送前一次跑完：plugin validate、plugin test、tsc、lint（Biome）、公開資訊掃描（檔案與 git 歷史）。只印每步一行摘要，失敗才印該步的尾端輸出。
 // 用法：node tools/check.mjs [mod 資料夾，預設本 repo] [--skip-tsc]
 // 公開資訊掃描另外讀 <git 共用目錄>/info/private-words（一行一個詞，不進版本控制），例如真名、私人網域。
 import { spawnSync, execFileSync } from 'node:child_process'
@@ -57,13 +57,21 @@ else if (!existsSync(join(dir, '.claude-plugin', 'types'))) {
   report('tsc', r.ok, `${n} 個錯誤`, r.out)
 }
 
+// lint：Biome 用 npx 跑固定版本（biome.json 的 $schema 網址裡的版號），不進 package.json，repo 維持沒有 npm 依賴
+{
+  const version = JSON.parse(readFileSync(join(dir, 'biome.json'), 'utf8')).$schema.match(/schemas\/([\d.]+)\//)[1]
+  const r = run('npx', ['-y', `@biomejs/biome@${version}`, 'lint', '--error-on-warnings', '.'])
+  report('lint', r.ok, r.ok ? `Biome ${version} 沒有問題` : '有問題', r.out)
+}
+
 // 公開資訊：追蹤中的文字檔與 git 歷史裡不該出現個人 Email、本機使用者路徑、private-words 裡的詞
 {
   const common = execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd: dir, encoding: 'utf8' }).trim()
   const wordsFile = resolve(dir, common, 'info', 'private-words')
   const words = existsSync(wordsFile) ? readFileSync(wordsFile, 'utf8').split(/\r?\n/).map(w => w.trim()).filter(Boolean) : []
   const files = execFileSync('git', ['ls-files'], { cwd: dir, encoding: 'utf8' }).split('\n').filter(f => f && !/\.(gif|mp4|png|jpe?g)$/i.test(f))
-  const email = /[\w.+-]+@[\w-]+(\.[\w-]+)+/g
+  // 最後一段要是字母（網域），套件版號 name@1.2.3 不算
+  const email = /[\w.+-]+@[\w-]+(\.[\w-]+)*\.[A-Za-z]{2,}\b/g
   const okEmail = /@(users\.noreply\.github\.com|anthropic\.com|example\.(com|org))$/i
   // 測試用的假使用者 `u` 與 `<user>` 這類占位不算
   const homePath = /[A-Za-z]:[\\/]+Users[\\/]+(?!u(?![\w.-])|<)[^\\/\s'"`]+/i

@@ -175,7 +175,7 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 | `$.session.messages`、`$.model.complete`、`$.model.fork` | 讀對話來寫筆記與交接摘要 |
 | `$.fs.read`、`$.fs.write` | 讀寫筆記檔與備份 |
 | `$.prompt.submit`、`$.command.run` | 把摘要送進新對話；執行 `/clear` |
-| `$.env.get`（`CLAUDE_CONFIG_DIR`、`HOME`、`USERPROFILE`） | 找到你的 `~/.claude` 資料夾 |
+| `$.env.get` | 讀三個環境變數 `CLAUDE_CONFIG_DIR`、`HOME`、`USERPROFILE`，只用來找到你的 `~/.claude` 資料夾，不需要另外設定 |
 | `$.tool.register` | 給 Claude 一個工具 `mark_in_project`，用來回報規則放進 repo 的哪裡 |
 | `$.settings.read` | 讀 Claude Code 的 `language` 設定，決定介面語言 |
 

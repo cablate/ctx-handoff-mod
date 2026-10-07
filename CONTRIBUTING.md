@@ -15,7 +15,7 @@ You need Node 22 and a Claude Code build with mods.
 ## Code style
 
 - TypeScript, ES modules, 2-space indent, single quotes, no semicolons. `.editorconfig` sets the basics for your editor.
-- `tsc` in strict mode is the check (run by `node tools/check.mjs`). There's no separate linter, so the repo stays free of npm dependencies.
+- `tsc` in strict mode and [Biome](https://biomejs.dev) lint (rules in `biome.json`) are the checks; `node tools/check.mjs` and CI run both. Biome runs through `npx` at a fixed version, so the repo still has no npm dependencies. To run it alone: `npx @biomejs/biome@2.5.15 lint .`
 - Code comments and `CLAUDE.md` are in Traditional Chinese, the maintainer's language. English comments are welcome in your changes.
 - Messages people see live in `hooks/i18n.ts`, in both English and Traditional Chinese; add both when you add one. Don't prefix them with `[ctx-handoff]` (Claude Code adds the mod name).
 

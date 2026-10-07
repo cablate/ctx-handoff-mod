@@ -177,9 +177,9 @@ Values outside the allowed range are pulled back into it. Cache keeping and proj
 | `$.session.messages`, `$.model.complete`, `$.model.fork` | Reads the conversation to write notes and handoff summaries |
 | `$.fs.read`, `$.fs.write` | Reads and writes the notes file and its backups |
 | `$.prompt.submit`, `$.command.run` | Sends the summary into the new conversation; runs `/clear` |
-| `$.env.get` (`CLAUDE_CONFIG_DIR`, `HOME`, `USERPROFILE`) | Finds your `~/.claude` folder |
+| `$.env.get` | Reads three environment variables, `CLAUDE_CONFIG_DIR`, `HOME` and `USERPROFILE`, only to find your `~/.claude` folder. Nothing needs to be set |
 | `$.tool.register` | Gives Claude one tool, `mark_in_project`, to report where it put a rule in your repo |
-| `$.settings.read` | Reads Claude Code's `language` setting to pick the message language |
+| `$.settings.read` | Reads Claude Code's `language` setting and this plugin's own settings (`pluginConfigs`) |
 
 It makes no network requests of its own and starts no programs (no `$.http` or `$.process` calls). To run a session without it, or any other mod, start Claude Code with `claude --safe-mode`. See also [`SECURITY.md`](SECURITY.md).
 

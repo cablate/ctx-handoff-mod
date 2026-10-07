@@ -39,8 +39,8 @@ function render(d) {
 if (cmd === 'list') {
   if (!arg) fail('用法：node tools/notes.mjs list <專案目錄名或檔案>')
   const { notes } = load(fileOf(arg))
-  notes.memory.forEach((m, i) => console.log(`M${i + 1} ${m.split('\n')[0].slice(0, 110)}`))
-  notes.rules.forEach((r, i) => console.log(`R${i + 1} ${r.name}（${r.count} 次）`))
+  notes.memory.forEach((m, i) => { console.log(`M${i + 1} ${m.split('\n')[0].slice(0, 110)}`) })
+  notes.rules.forEach((r, i) => { console.log(`R${i + 1} ${r.name}（${r.count} 次）`) })
 } else if (cmd === 'apply') {
   if (!arg) fail('用法：node tools/notes.mjs apply <ops.json> [--write]')
   const ops = JSON.parse(readFileSync(arg, 'utf8'))
