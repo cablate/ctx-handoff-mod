@@ -51,7 +51,7 @@ context 12034 / 門檻 600000（視窗 1000000）
 
 **更新**不會自動進行。執行 `claude plugin update ctx-handoff@ctx-handoff-mod`，或在 `/plugin` 的 **Marketplaces** 開啟自動更新。
 
-**想試用或修改，改用 clone。** 設定寫在程式裡（見[調整設定](#調整設定)），從 marketplace 安裝的版本更新時會被覆蓋，要改設定就 clone 下來：
+**想改程式，** 改用 clone 載入，存檔就會生效：
 
 ```sh
 git clone https://github.com/cablate/ctx-handoff-mod ~/.claude/mods/ctx-handoff
@@ -126,17 +126,21 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 
 ## 調整設定
 
-設定是 [`hooks/register.ts`](hooks/register.ts) 開頭的常數。用 `--plugin-dir` 載入的 clone，改完存檔就會生效。
+在 `/config` 裡搜尋 ctx-handoff，或執行 `/plugin configure ctx-handoff@ctx-handoff-mod` 修改。值存在你自己的 `settings.json`，更新 plugin 不會被覆蓋，改了立刻生效。
 
-| 常數 | 預設 | 意思 |
+| 設定 | 預設 | 意思 |
 |---|---|---|
-| `THRESHOLD` | `600_000` | context 到多少 token 時交接 |
-| `WINDOW_RATIO` | `0.8` | 視窗較小時，改用「視窗 × 這個比例」當門檻 |
-| `IDLE_MS` | 55 分鐘 | 閒置多久後保持快取 |
-| `MAX_REFRESH` | `3` | 最多保持幾次，之後改存交接摘要 |
-| `MIN_TOKENS` | `30_000` | 對話小於這個值時，不保持快取、不整理筆記 |
-| `DISTILL_MODEL` | `claude-sonnet-5-5` | 整理筆記用的模型 |
-| `UI_LANG` | `'auto'` | 介面語言：`'auto'`、`'en'` 或 `'zh-TW'` |
+| `threshold` | `600000` | context 到多少 token 時交接 |
+| `window_ratio` | `0.8` | 視窗較小時，改用「視窗 × 這個比例」當門檻 |
+| `keep_cache_warm` | 開 | 離開時保持快取（和 `/handoff refresh on\|off` 相同） |
+| `idle_minutes` | `55` | 閒置幾分鐘後保持快取（5–59） |
+| `max_refresh` | `3` | 每段閒置最多保持幾次，之後改存交接摘要 |
+| `min_tokens` | `30000` | 對話小於這個值時，不保持快取、不產生離席交接、不整理筆記 |
+| `project_notes` | 開 | 專案筆記（和 `/handoff distill on\|off` 相同） |
+| `notes_model` | `claude-sonnet-5-5` | 整理筆記用的模型：Sonnet 5.5 或 Opus 5.5 |
+| `language` | `auto` | 介面語言：`auto`、`en` 或 `zh-TW` |
+
+超出允許範圍的值會被拉回範圍內。
 
 **門檻怎麼選**：一般經驗是模型品質在 200k～300k token 左右開始下滑。預設 600k 是為了少交接幾次；如果你發現交接前模型已經開始變差，就調低它。
 

@@ -44,6 +44,8 @@ let curRoot = 'C:\\proj'
 let curCwd = 'C:/proj'
 // $.env.get 的回答；world() 重設成 Windows 環境，POSIX 的測試在 world() 之後改它
 let envVars: Record<string, string> = { USERPROFILE: 'C:\\Users\\u' }
+// /config 裡本 plugin 的欄位（ctx-handoff.<欄位>）；測試開始前可以先放值，模擬使用者設定過
+let configValues: Record<string, unknown> = {}
 
 // 引擎底下的世界：用量、fork、/clear、送出、檔案，全部記下來
 const world = (on: On, tokens: number, window = 1_000_000, store: Record<string, unknown> = {}, agents: { id: string; status: string }[] = [], turns: number | (() => number) = 0,
@@ -77,6 +79,11 @@ const world = (on: On, tokens: number, window = 1_000_000, store: Record<string,
   curRoot = 'C:\\proj'
   curCwd = 'C:/proj'
   envVars = { USERPROFILE: 'C:\\Users\\u' }
+  // 開關放在 /config：沿用 store 寫法的測試（refresh／distill: false）轉成設定值
+  configValues = {
+    ...(store.refresh === false ? { 'ctx-handoff.keep_cache_warm': false } : {}),
+    ...(store.distill === false ? { 'ctx-handoff.project_notes': false } : {}),
+  }
   const clock = mock.clock(on)
   on('ui.log', (_$, e: unknown) => { logs.push(JSON.stringify(e)); return { value: undefined } })
   const statuses: (string | undefined)[] = []
@@ -92,6 +99,8 @@ const world = (on: On, tokens: number, window = 1_000_000, store: Record<string,
   const put = (key: string, value: unknown) => { kv.set(key, value) }
   on('env.get', (_$, e: { name: string }) => ({ value: envVars[e.name] }))
   on('settings.read', () => ({ value: { language } }) as never)
+  on('config.list', () => ({ value: Object.entries(configValues).map(([key, value]) => ({ key, value, label: key, kind: typeof value === 'boolean' ? 'boolean' : typeof value === 'number' ? 'number' : 'text', provider: { plugin: 'ctx-handoff', tier: 'user' }, isLocked: false })) }) as never)
+  on('config.set', (_$, e: { key: string; value: unknown }) => { configValues[e.key] = e.value; return { value: e.value } as never })
   on('session.id', () => ({ value: curSid }))
   on('session.turns', () => ({ value: turnsOf() }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { tokens, window }, rateLimits: [] } }))
@@ -2027,4 +2036,45 @@ test('放進專案：已在專案的規則不會再被提議成個人守門，�
   expect((await cmd($, 'guard suggest')).text).toContain('沒有出現 3 次以上、還沒有守門的規則')
   await distillNow($)
   expect(w.forks.at(-1) ?? '').toContain('正式站刪除要斷言筆數｜出現 4 次｜DELETE 前先在 DO 區塊斷言筆數｜已在 AGENTS.md（repo 裡的才是正本，不要 update_rule）')
+})
+
+// ---------- 使用者設定：/config（plugin.json 的 userConfig），不用改原始碼 ----------
+test('設定：/config 裡的門檻會生效', async ($, on) => {
+  world(on, 100_000, 1_000_000, {}, [], 5)
+  configValues = { 'ctx-handoff.threshold': 200_000 }
+  expect((await cmd($, '')).text).toContain('context 100000 / 門檻 200000')
+})
+
+test('設定：超出範圍的值拉回範圍內（門檻最低 50000）', async ($, on) => {
+  world(on, 100_000, 1_000_000, {}, [], 5)
+  configValues = { 'ctx-handoff.threshold': 10 }
+  expect((await cmd($, '')).text).toContain('context 100000 / 門檻 50000')
+})
+
+test('設定：/handoff refresh off 與 distill off 寫進 /config，不再寫 store', async ($, on) => {
+  const w = world(on, 100_000, 1_000_000, {}, [], 5)
+  await startSession($)
+  expect((await cmd($, 'refresh off')).text).toContain('快取刷新已設為 off（閒置 55 分鐘')
+  expect(configValues['ctx-handoff.keep_cache_warm']).toBe(false)
+  expect(w.get('refresh')).toBeUndefined()
+  await cmd($, 'distill off')
+  expect(configValues['ctx-handoff.project_notes']).toBe(false)
+  expect((await cmd($, '')).text).toContain('快取刷新 off')
+})
+
+test('設定：使用者在 /config 改語言，介面文字跟著換', async ($, on) => {
+  const w = world(on, 100_000, 1_000_000, {}, [], 5)
+  await startSession($)
+  await $.config.set({ key: 'ctx-handoff.language', value: 'en' } as never)
+  await endTurn($)
+  expect(w.statuses.at(-1)).toBe('25 more messages until notes update')
+})
+
+test('設定：/config 的閒置分鐘數決定多久後保持快取', async ($, on) => {
+  const w = world(on, 100_000, 1_000_000, {}, [], 5)
+  configValues = { 'ctx-handoff.idle_minutes': 10 }
+  await startSession($)
+  await endTurn($)
+  await w.clock.advance(10 * 60_000)
+  expect(w.logs.some(l => l.includes('快取刷新 1/3'))).toBe(true)
 })

@@ -53,14 +53,14 @@ Cache refresh on, refreshed 0/3 this idle period, timer not started
 
 **Updates** aren't automatic. Run `claude plugin update ctx-handoff@ctx-handoff-mod`, or turn on auto-update under **Marketplaces** in `/plugin`.
 
-**Try it or change it from a clone instead.** Settings live in the code (see [Settings](#settings)), and a marketplace install is overwritten on update, so clone it if you want to change them:
+**To work on the code,** load a clone instead; edits take effect when you save:
 
 ```sh
 git clone https://github.com/cablate/ctx-handoff-mod ~/.claude/mods/ctx-handoff
 claude --plugin-dir ~/.claude/mods/ctx-handoff
 ```
 
-To load a clone in every session, add its absolute path to `env` in `~/.claude/settings.json` (separate several paths with `;` on Windows, `:` on macOS/Linux):
+To load the clone in every session, add its absolute path to `env` in `~/.claude/settings.json` (separate several paths with `;` on Windows, `:` on macOS/Linux):
 
 ```json
 "env": { "CLAUDE_CODE_PLUGIN_DIRS": "/home/you/.claude/mods/ctx-handoff" }
@@ -128,17 +128,21 @@ You won't need these in normal use. If `/handoff` is already taken by your own c
 
 ## Settings
 
-Settings are constants at the top of [`hooks/register.ts`](hooks/register.ts). In a clone loaded with `--plugin-dir`, they take effect when you save.
+Change them in `/config` (search for ctx-handoff) or with `/plugin configure ctx-handoff@ctx-handoff-mod`. They're saved in your own `settings.json`, so updates keep them, and they apply right away.
 
-| Constant | Default | Meaning |
+| Setting | Default | Meaning |
 |---|---|---|
-| `THRESHOLD` | `600_000` | Context tokens that trigger a handoff |
-| `WINDOW_RATIO` | `0.8` | On smaller windows, the threshold is `window × ratio` |
-| `IDLE_MS` | 55 min | Idle time before keeping the cache warm |
-| `MAX_REFRESH` | `3` | How many times, before saving a handoff instead |
-| `MIN_TOKENS` | `30_000` | Below this, skip cache keeping and notes |
-| `DISTILL_MODEL` | `claude-sonnet-5-5` | Model used for project notes |
-| `UI_LANG` | `'auto'` | Message language: `'auto'`, `'en'` or `'zh-TW'` |
+| `threshold` | `600000` | Context tokens that trigger a handoff |
+| `window_ratio` | `0.8` | On smaller windows, the threshold is `window × ratio` |
+| `keep_cache_warm` | on | Keep the cache warm while you're away (same as `/handoff refresh on\|off`) |
+| `idle_minutes` | `55` | Idle minutes before each keep-warm request (5–59) |
+| `max_refresh` | `3` | Keep-warm requests per idle period, before saving a handoff instead |
+| `min_tokens` | `30000` | Below this, skip cache keeping, away handoffs and notes |
+| `project_notes` | on | Project notes (same as `/handoff distill on\|off`) |
+| `notes_model` | `claude-sonnet-5-5` | Model for project notes: Sonnet 5.5 or Opus 5.5 |
+| `language` | `auto` | Message language: `auto`, `en` or `zh-TW` |
+
+Values outside the allowed range are pulled back into it.
 
 **Choosing a threshold:** quality is commonly seen to start slipping around 200k–300k tokens. The 600k default trades that for fewer handoffs; lower it if the model gets worse before the handoff fires.
 

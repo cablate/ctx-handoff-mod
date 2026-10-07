@@ -10,6 +10,7 @@ Notable changes to ctx-handoff. Versions follow the `version` in `.claude-plugin
 
 ### Changed
 
+- **Settings moved to `/config`:** threshold, idle time, keep-warm count, notes model, language and the two on/off switches are now plugin settings (`/config` or `/plugin configure`), saved in your own `settings.json` and kept across updates. Editing `hooks/register.ts` is no longer needed. `/handoff refresh` and `/handoff distill` write the same settings; a value you set with them before is not carried over.
 - Removed the "cache keeping isn't confirmed" limitation: real sessions show the 2nd and 3rd refreshes (110 and 165 minutes idle) reading the whole conversation from cache.
 
 ## 0.3.0 – 2026-10-07

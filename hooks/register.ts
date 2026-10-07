@@ -8,14 +8,27 @@ import type { Lang } from './i18n'
 
 const tag = '[ctx-handoff]'
 
-// 在場 handoff：context 達 min(600k, 視窗 × 80%) 時產生 handoff → /clear → 送出
-const THRESHOLD = 600_000
-const WINDOW_RATIO = 0.8
-// 1 小時快取：最後一次用到快取後 55 分鐘刷新，最多 3 次，第 4 次改產生離席 handoff
-const IDLE_MS = 55 * 60_000
-const MAX_REFRESH = 3
-// 太小的 context 重建很便宜，不值得刷新或產生離席 handoff
-const MIN_TOKENS = 30_000
+// 使用者設定：plugin.json 的 userConfig，顯示在 /config 與 /plugin configure，值存在使用者自己的 settings.json，
+// 更新 plugin 不會覆蓋。這裡是預設值；session.start 讀一次，使用者在 /config 改了（config.set）再讀
+type Config = {
+  // 在場 handoff：context 達 min(threshold, 視窗 × windowRatio) 時產生 handoff → /clear → 送出
+  threshold: number; windowRatio: number
+  // 1 小時快取：最後一次用到快取後 idleMs 刷新，最多 maxRefresh 次，之後改產生離席 handoff
+  idleMs: number; maxRefresh: number
+  // 太小的 context 重建很便宜，不值得刷新、產生離席 handoff 或整理
+  minTokens: number
+  keepCacheWarm: boolean; projectNotes: boolean
+  // 背景整理用的模型：不帶歷史的單次請求，只送上次整理之後的新對話（最低 Sonnet 5.5）
+  notesModel: string
+  // 介面語言（狀態列、toast、紀錄、指令回覆、面板）：auto 先看 Claude Code 的 language 設定，沒設就看系統語系
+  language: 'auto' | Lang
+}
+const CONFIG_DEFAULTS: Config = {
+  threshold: 600_000, windowRatio: 0.8, idleMs: 55 * 60_000, maxRefresh: 3, minTokens: 30_000,
+  keepCacheWarm: true, projectNotes: true, notesModel: 'claude-sonnet-5-5', language: 'auto',
+}
+const CONFIG_PREFIX = 'ctx-handoff.'
+let cfg: Config = { ...CONFIG_DEFAULTS }
 const KEEP = 5
 // fork 沒有取消參數：超過時限就不再等（交接放棄、攔下的訊息送回舊對話），它在背景跑完也不採用
 const HANDOFF_TIMEOUT_MS = 3 * 60_000
@@ -23,17 +36,12 @@ const DISTILL_TIMEOUT_MS = 8 * 60_000
 // 交接前整理和 handoff 同時發出；整理一開始就讀好對話片段，之後不依賴這段對話，
 // 所以只等它讀完片段（幾秒）就 /clear，請求留在背景跑完
 const DISTILL_GRACE_MS = 5_000
-// 背景整理用的模型：不帶歷史的單次請求，只送上次整理之後的新對話
-const DISTILL_MODEL = 'claude-sonnet-5-5'
 const DISTILL_EFFORT = 'low'
 const DISTILL_MAX_TOKENS = 32_000
 // 對話片段的字數上限（超過時保留最新的部分）；單一工具輸入／結果各自截短
 const TRANSCRIPT_MAX_CHARS = 300_000
 const TOOL_INPUT_CHARS = 300
 const TOOL_RESULT_CHARS = 500
-// 介面語言（狀態列、toast、紀錄、指令回覆、面板）：auto 先看 Claude Code 的 language 設定，沒設就看系統語系，
-// zh 開頭用繁體中文，其餘英文；也可以直接指定。給模型的提示與經驗檔格式不受影響
-const UI_LANG: 'auto' | Lang = 'auto'
 
 const HANDOFF_PROMPT = [
   '為接手這段工作的新對話寫一份 handoff，第一行寫「HANDOFF:」加一句話的目標，全文不超過 1500 字。',
@@ -537,7 +545,41 @@ type HandoffError = { at: number; sessionId: string; kind: Kind; reason: string;
 
 const awayKey = (sessionId: string) => `away:${sessionId}`
 const pendingKey = (sessionId: string) => `pendingSubmit:${sessionId}`
-const thresholdOf = (window: number) => Math.min(THRESHOLD, Math.floor(window * WINDOW_RATIO))
+const thresholdOf = (window: number) => Math.min(cfg.threshold, Math.floor(window * cfg.windowRatio))
+
+// 讀 /config 裡本 plugin 的欄位；超出範圍的拉回範圍內，型別不對就用預設值。changed：剛改、可能還沒寫進清單的那一欄
+async function loadConfig($: EngineInterface, changed?: { key: string; value: unknown }) {
+  let rows: readonly { key: string; value: unknown }[] = []
+  try { rows = await $.config.list() } catch {}
+  const get = (field: string) =>
+    changed?.key === CONFIG_PREFIX + field ? changed.value : rows.find(r => r.key === CONFIG_PREFIX + field)?.value
+  const num = (field: string, min: number, max: number, d: number) => {
+    const v = get(field)
+    return typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : d
+  }
+  const bool = (field: string, d: boolean) => { const v = get(field); return typeof v === 'boolean' ? v : d }
+  const d = CONFIG_DEFAULTS
+  const model = get('notes_model')
+  const lang = get('language')
+  cfg = {
+    threshold: num('threshold', 50_000, 2_000_000, d.threshold),
+    windowRatio: num('window_ratio', 0.3, 0.95, d.windowRatio),
+    idleMs: num('idle_minutes', 5, 59, d.idleMs / 60_000) * 60_000,
+    maxRefresh: Math.round(num('max_refresh', 0, 10, d.maxRefresh)),
+    minTokens: num('min_tokens', 0, 500_000, d.minTokens),
+    keepCacheWarm: bool('keep_cache_warm', d.keepCacheWarm),
+    projectNotes: bool('project_notes', d.projectNotes),
+    notesModel: typeof model === 'string' && model.trim() ? model.trim() : d.notesModel,
+    language: lang === 'en' || lang === 'zh-TW' ? lang : 'auto',
+  }
+}
+
+// 指令改開關：寫進 /config（和使用者在選單改一樣），被設定檔鎖住時回原因
+async function setConfig($: EngineInterface, field: string, value: boolean) {
+  const r = await $.config.set({ key: CONFIG_PREFIX + field, value })
+  await loadConfig($, r.deny === undefined ? { key: CONFIG_PREFIX + field, value } : undefined)
+  return r.deny
+}
 
 // 門檻 handoff 失敗後，至少再 3 則使用者訊息或 10 分鐘才重試
 const RETRY_TURNS = 3
@@ -571,8 +613,8 @@ let deferral: string | undefined
 let deferToasted = false
 const seenKnown = new Set<string>()
 
-async function isRefreshOn($: EngineInterface) {
-  return (await $.store.get('refresh')) !== false
+async function isRefreshOn(_$: EngineInterface) {
+  return cfg.keepCacheWarm
 }
 
 // fork 失敗的原因；nothing-to-fork 多半是剛重新啟動（含自動更新）或剛 /clear，主對話回應一次就能用
@@ -731,8 +773,8 @@ const noteBlock = (changes: Change[], file: string) => [
   ...changes.map(c => `- ${c}`),
 ].join('\n')
 
-async function isDistillOn($: EngineInterface) {
-  return (await $.store.get('distill')) !== false
+async function isDistillOn(_$: EngineInterface) {
+  return cfg.projectNotes
 }
 
 const anchorOf = (text: string) => text.replace(/\s+/g, ' ').trim().slice(0, 30)
@@ -765,7 +807,7 @@ function transcriptOf(rows: readonly Row[], anchor: string | undefined) {
   return { text, found }
 }
 
-// 整理上次之後新增的對話：先讀好對話片段（之後 /clear 也不影響），再交給 DISTILL_MODEL
+// 整理上次之後新增的對話：先讀好對話片段（之後 /clear 也不影響），再交給設定的整理模型
 // queue=false：交接前整理，之後會 /clear，不排入差異
 async function distill($: EngineInterface, why: string, queue = true) {
   if (distilling) return undefined
@@ -794,7 +836,7 @@ async function distill($: EngineInterface, why: string, queue = true) {
     const notes = parseNotes(original)
     const started = await $.clock.now()
     const r = await $.model.complete({
-      model: DISTILL_MODEL,
+      model: cfg.notesModel,
       effort: DISTILL_EFFORT,
       maxTokens: DISTILL_MAX_TOKENS,
       timeoutMs: DISTILL_TIMEOUT_MS,
@@ -852,7 +894,7 @@ async function showDistillStatus($: EngineInterface, running?: string) {
   if (running) return $.ui.status(t().status.running)
   const left = DISTILL_EVERY - (await sinceDistill($))
   if (left > 0) return $.ui.status(t().status.left(left))
-  $.ui.status(((await $.session.usage()).context.tokens ?? 0) < MIN_TOKENS ? t().status.short : t().status.next)
+  $.ui.status(((await $.session.usage()).context.tokens ?? 0) < cfg.minTokens ? t().status.short : t().status.next)
 }
 
 // 上次整理之後的使用者訊息數
@@ -876,7 +918,7 @@ async function distillStatus($: EngineInterface) {
   const ind = m.ind
   return [
     m.distillStatus.head(on ? 'on' : 'off', DISTILL_EVERY),
-    ...(on ? [`${ind}${m.distillStatus.next(Math.max(0, DISTILL_EVERY - (await sinceDistill($))), IDLE_MS / 60_000)}`] : []),
+    ...(on ? [`${ind}${m.distillStatus.next(Math.max(0, DISTILL_EVERY - (await sinceDistill($))), cfg.idleMs / 60_000)}`] : []),
     `${ind}${d ? m.distillStatus.last(new Date(d.at).toLocaleString(), d.why, d.changes.length) : m.distillStatus.lastNone}`,
     ...(d ? [`${ind}${d.usage}`, ...d.changes.map(c => `${ind}${m.bullet}${c}`)] : []),
     ...(d?.rejected?.count ? [`${ind}${m.distillStatus.rejected(d.rejected.count, d.rejected.samples.join(m.slashList))}`] : []),
@@ -891,7 +933,7 @@ const idleState = atom({ plugin: 'ctx-handoff', key: 'idle' } as const, null)
 // 熱重載時已過期多久還補刷新：超過就當快取已失效（TTL 60 分、刷新排在 55 分）
 const RELOAD_GRACE_MS = 5 * 60_000
 
-async function schedule($: EngineInterface, delay = IDLE_MS) {
+async function schedule($: EngineInterface, delay = cfg.idleMs) {
   idle?.cancel()
   idle = $.clock.after(delay, () => void onIdle($))
   const due = (await $.clock.now()) + delay
@@ -914,16 +956,16 @@ async function onIdle($: EngineInterface) {
   if (busy) return
   const { context } = await $.session.usage()
   const tokens = context.tokens ?? 0
-  if (tokens < MIN_TOKENS) return
+  if (tokens < cfg.minTokens) return
 
-  if ((await isRefreshOn($)) && refreshes < MAX_REFRESH) {
+  if ((await isRefreshOn($)) && refreshes < cfg.maxRefresh) {
     // 刷新用最便宜的 fork（只回 OK）讀一次快取；整理是另一個不帶歷史的請求，有新對話才跑
     const r = await forkWithin($, '只回覆 OK', HANDOFF_TIMEOUT_MS)
     if (await isDistillOn($)) await distill($, t().distill.why.idle)
     refreshes += 1
     $.ui.log(r.isAnswered
-      ? t().idle.refresh(refreshes, MAX_REFRESH, r.usage.cache_read_input_tokens, r.usage.cache_creation_input_tokens)
-      : t().idle.refreshFailed(refreshes, MAX_REFRESH, r.reason))
+      ? t().idle.refresh(refreshes, cfg.maxRefresh, r.usage.cache_read_input_tokens, r.usage.cache_creation_input_tokens)
+      : t().idle.refreshFailed(refreshes, cfg.maxRefresh, r.reason))
     await schedule($)
     return
   }
@@ -1071,6 +1113,7 @@ async function onStop($: EngineInterface, e: { agent_id?: string; background_tas
 // 重設所有程序內狀態（模組重新載入或測試重跑時）
 function resetState() {
   idle?.cancel()
+  cfg = { ...CONFIG_DEFAULTS }
   promoteTool = undefined
   idle = undefined
   refreshes = 0
@@ -1091,12 +1134,13 @@ function resetState() {
   setLang('en')
 }
 
-// 介面語言：解析一次就記住（熱重載會重算）。每個 hook 一進來先等它，之後 t() 同步取字串
+// 設定與介面語言：第一次用到時讀一次就記住（熱重載會重算）。每個 hook 一進來先等它，之後 cfg、t() 同步取用
 let langReady: Promise<void> | undefined
-const initLang = ($: EngineInterface) => (langReady ??= detectLang($).then(setLang, () => setLang('en')))
+const initLang = ($: EngineInterface) =>
+  (langReady ??= loadConfig($).then(() => detectLang($)).then(setLang, () => setLang('en')))
 
 async function detectLang($: EngineInterface): Promise<Lang> {
-  if (UI_LANG !== 'auto') return UI_LANG
+  if (cfg.language !== 'auto') return cfg.language
   let setting: unknown
   try { setting = (await $.settings.read()).language } catch {}
   let locale: string | undefined
@@ -1257,7 +1301,7 @@ async function suggestGuards($: EngineInterface) {
   const rows = (await $.session.messages()) as readonly Row[]
   const calls = rows.flatMap(r => r.toolUses)
   const r = await $.model.complete({
-    model: DISTILL_MODEL,
+    model: cfg.notesModel,
     effort: DISTILL_EFFORT,
     maxTokens: GUARD_MAX_TOKENS,
     timeoutMs: DISTILL_TIMEOUT_MS,
@@ -1603,6 +1647,21 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // 使用者在 /config 改了本 plugin 的設定：重讀，語言與閒置計時跟著換（本 plugin 自己的 $.config.set 不會進這裡）
+  on('config.set', async ($, e, next) => {
+    const out = await next(e)
+    if (!e.key.startsWith(CONFIG_PREFIX) || out.deny !== undefined) return out
+    const before = { ...cfg }
+    await loadConfig($, { key: e.key, value: out.value })
+    if (cfg.language !== before.language) {
+      langReady = undefined
+      await initLang($)
+    }
+    if (cfg.idleMs !== before.idleMs && idle !== undefined) await schedule($)
+    if (cfg.projectNotes !== before.projectNotes || cfg.minTokens !== before.minTokens) await showDistillStatus($)
+    return out
+  })
+
   // 每段新對話（含 /clear 之後）開頭帶入這個工作區的經驗；只在開頭一次，不影響之後的快取
   on('prompt.context', async ($, e, next) => {
     const out = await next(e)
@@ -1674,7 +1733,7 @@ export const register: Register = on => {
     // 到門檻的交接由 classic.Stop 判斷；這裡只處理還沒到門檻的整理
     if (context.tokens !== undefined && context.tokens >= thresholdOf(context.window)) return out
     // 每 DISTILL_EVERY 則使用者訊息，趁快取熱整理一次
-    if ((context.tokens ?? 0) >= MIN_TOKENS && !distilling && (await isDistillOn($)) && (await sinceDistill($)) >= DISTILL_EVERY) {
+    if ((context.tokens ?? 0) >= cfg.minTokens && !distilling && (await isDistillOn($)) && (await sinceDistill($)) >= DISTILL_EVERY) {
       $.clock.after(0, () => void distill($, t().distill.why.every(DISTILL_EVERY)))
     }
     if (!distilling) await showDistillStatus($)
@@ -1790,7 +1849,7 @@ async function status($: EngineInterface) {
   const m = t()
   return [
     `${m.cmd.context(String(context.tokens ?? '?'), thresholdOf(context.window), context.window)}`,
-    m.cmd.refresh((await isRefreshOn($)) ? 'on' : 'off', refreshes, MAX_REFRESH, idle !== undefined),
+    m.cmd.refresh((await isRefreshOn($)) ? 'on' : 'off', refreshes, cfg.maxRefresh, idle !== undefined),
     m.cmd.away(away ? (away.held === undefined ? 'yes' : 'held') : 'none'),
     m.cmd.latest(last ? { at: new Date(last.at).toLocaleString(), kind: last.kind, tokens: String(last.tokens ?? '?') } : undefined),
     ...(last?.usage ? [`${m.ind}${describeUsage(last.usage)}`] : []),
@@ -1834,9 +1893,9 @@ async function handoffDry($: EngineInterface) {
 
 async function distillCommand($: EngineInterface, arg: string) {
   if (arg === 'on' || arg === 'off') {
-    await $.store.set('distill', arg === 'on')
+    const deny = await setConfig($, 'project_notes', arg === 'on')
     await showDistillStatus($)
-    return { text: `${t().cmd.distillSet(arg)}` }
+    return { text: deny ? t().cmd.configLocked(deny) : t().cmd.distillSet(arg) }
   }
   if (arg !== '') return { text: `${t().cmd.distillUsage}` }
   if (distilling) return { text: `${t().cmd.distilling}` }
@@ -1849,8 +1908,8 @@ async function distillCommand($: EngineInterface, arg: string) {
 
 async function refreshCommand($: EngineInterface, arg: string) {
   if (arg !== 'on' && arg !== 'off') return { text: `${t().cmd.refreshNow((await isRefreshOn($)) ? 'on' : 'off')}` }
-  await $.store.set('refresh', arg === 'on')
-  return { text: `${t().cmd.refreshSet(arg)}` }
+  const deny = await setConfig($, 'keep_cache_warm', arg === 'on')
+  return { text: deny ? t().cmd.configLocked(deny) : t().cmd.refreshSet(arg, cfg.idleMs / 60_000) }
 }
 
 async function resume($: EngineInterface) {
