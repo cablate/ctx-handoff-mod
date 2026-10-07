@@ -225,6 +225,19 @@ test('完成前驗證：別的 Stop hook 已經要求繼續時不插手；子代
   expect((await stop($, claim)).block).toContain('[ctx-handoff]')
 })
 
+// 2026-10-08 實機誤判：背景子代理改檔被算進主對話的這一輪，主對話改檔後明明跑過檢查，仍被要求先驗證
+test('完成前驗證：子代理（含背景子代理）的改檔與檢查不算主對話的這一輪', async ($, on) => {
+  world(on, 1000)
+  await $.tool.call({ tool: 'Edit', file_path: 'a.ts', old_string: 'a', new_string: 'b' })
+  await $.tool.call({ tool: 'Bash', command: 'node tools/check.mjs .' })
+  await $.tool.call({ tool: 'Edit', file_path: 'b.ts', old_string: 'a', new_string: 'b', agentId: 'bg1' } as never)
+  expect((await stop($, claim)).block).toBeUndefined()
+  // 子代理跑的檢查也不能替主對話的改檔作證
+  await $.tool.call({ tool: 'Edit', file_path: 'a.ts', old_string: 'a', new_string: 'b' })
+  await $.tool.call({ tool: 'Bash', command: 'npm test', agentId: 'bg1' } as never)
+  expect((await stop($, claim)).block).toContain('[ctx-handoff]')
+})
+
 test('完成前驗證：done_check 關閉時不擋', async ($, on) => {
   world(on, 1000)
   ctl.configValues['ctx-handoff.done_check'] = false

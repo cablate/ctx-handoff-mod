@@ -735,10 +735,11 @@ function watchCall<R extends { deny?: string; isError?: boolean; text?: string; 
   try {
     if (r.deny !== undefined) return r
     const failed = r.isError === true
-    if (cfg.doneCheck) noteCall(rt.work, e.tool, e as Record<string, unknown>, failed)
+    const agent = (e as { agentId?: string }).agentId ?? ''
+    // 只記主對話自己的呼叫：子代理（含還在背景跑的）改檔或驗證不算主對話這一輪（2026-10-08 實機誤判）
+    if (cfg.doneCheck && agent === '') noteCall(rt.work, e.tool, e as Record<string, unknown>, failed)
     if (!cfg.retryNudge) return r
     const text = r.text ?? (typeof r.result === 'string' ? r.result : undefined)
-    const agent = (e as { agentId?: string }).agentId ?? ''
     const nudge = trackFailure(rt.streaks, `${agent}|${e.tool}`, e.tool, failed, text)
     return nudge ? { ...r, context: [...(r.context ?? []), nudge] } : r
   } catch {
