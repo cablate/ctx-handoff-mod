@@ -187,6 +187,18 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 
 只想暫時關掉，在 `/plugin` 停用就好。
 
+## 在哪裡能用
+
+Claude Code 大多數執行環境都會載入 mod，但只有終端機和 Desktop 會畫出 mod 的畫面（[Claude Code 文件](https://code.claude.com/docs/en/plugins/mods/overview#where-mods-run)）。
+
+| 環境 | 背景功能（交接、筆記、守門） | 狀態列與面板 | 確認方式 |
+|---|---|---|---|
+| 終端機裡的 `claude`（含編輯器內建終端機、JetBrains） | 可以 | 可以 | 實測 |
+| `claude -p` | 可以；`/handoff` 以文字回覆 | 不行 | 實測 |
+| Desktop 的 Code 分頁 | 可以 | 可以 | 依官方文件 |
+| VS Code 擴充功能的聊天面板 | 可以 | 不行 | 依官方文件 |
+| Desktop 的 WSL session | 不行（那裡不載入 plugin） | 不行 | 依官方文件 |
+
 ## 限制
 
 - **5 分鐘快取的使用者請關掉保持快取。** 用 API key、Bedrock、Vertex，或訂閱額度用完、開始扣 usage credits 時，快取只有 5 分鐘，55 分鐘後的請求反而要重寫整段快取。請執行 `/handoff refresh off`，它不會自動判斷。

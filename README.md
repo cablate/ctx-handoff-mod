@@ -189,6 +189,18 @@ Start with `/handoff`: it shows context use, which features are on, and the late
 
 To turn it off for a while instead, disable it in `/plugin`.
 
+## Where it works
+
+Mods load in most places Claude Code runs, but only the terminal and the Desktop app draw what a mod shows ([Claude Code docs](https://code.claude.com/docs/en/plugins/mods/overview#where-mods-run)).
+
+| Where | Background work (handoff, notes, guards) | Status line and panel | Checked |
+|---|---|---|---|
+| `claude` in a terminal (also an editor's terminal, JetBrains) | Yes | Yes | Tested |
+| `claude -p` | Yes; `/handoff` replies as text | No | Tested |
+| Desktop app, Code tab | Yes | Yes | From the docs |
+| VS Code extension chat panel | Yes | No | From the docs |
+| Desktop app, WSL session | No (plugins don't load there) | No | From the docs |
+
 ## Limitations
 
 - **On a 5-minute cache, turn cache keeping off.** API-key, Bedrock and Vertex users, and subscribers into usage credits, get a 5-minute cache, so a request at 55 minutes rewrites the whole cache. Run `/handoff refresh off`; it isn't detected automatically.
