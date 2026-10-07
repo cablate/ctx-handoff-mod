@@ -1,0 +1,41 @@
+name: Bug report
+description: Something doesn't work as the README says
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: Output of /handoff
+      description: Run `/handoff` in the session and paste the output. Remove project names or paths you don't want public.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: claude-version
+    attributes:
+      label: Claude Code version
+      description: Output of `claude --version`
+    validations:
+      required: true
+  - type: input
+    id: mod-version
+    attributes:
+      label: ctx-handoff commit
+      description: Output of `git -C <ctx-handoff folder> rev-parse --short HEAD`
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options: [macOS, Linux, Windows, Other]
+  - type: dropdown
+    id: auth
+    attributes:
+      label: How you sign in
+      options: [Claude subscription, API key, Bedrock, Vertex, Other]

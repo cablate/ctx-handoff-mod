@@ -1,0 +1,11 @@
+name: Idea or request
+description: Something ctx-handoff could do better
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What gets in your way
+      description: The situation and what you'd like to happen. A real example helps most.
+    validations:
+      required: true

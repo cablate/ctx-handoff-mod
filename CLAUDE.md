@@ -1,5 +1,7 @@
 # ctx-handoff 開發指引
 
+> Development notes for maintainers and AI assistants, in Traditional Chinese. Contributors: start with [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 給在這個 repo 工作的 AI 與開發者。使用說明在 `README.md`／`README.zh-TW.md`；本檔只寫改程式時要知道的事。
 
 ## 開發流程
@@ -16,7 +18,8 @@ node tools/status.mjs             # 確認各 session 已熱重載、看整理�
 - 推送前一定跑 `node tools/check.mjs`：plugin validate、plugin test、tsc、公開資訊掃描（`<git 共用目錄>/info/private-words` 放不能出現在公開 repo 的詞，不進版本控制）。
 - 每個真的發生過的事故，補一個在舊程式上會失敗的固定測試。
 - 改經驗檔用 `node tools/notes.mjs`（以條目為單位、預設預演），不要手寫一次性腳本。工具一覽在 `tools/README.md`。
-- 做完一段工作後的檢討紀錄在 `docs/work-retro.md`，先結案上面的待結案項目。
+- 做完一段工作後的檢討紀錄在主資料夾的 `docs/work-retro.md`（不進版本控制），先結案上面的待結案項目。
+- 使用者看得到的改動要同步雙語 README，並在 `CHANGELOG.md` 的 Unreleased 加一行。
 
 ## 設計決定（改之前先讀）
 

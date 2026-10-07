@@ -81,7 +81,7 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 
 筆記就是一個 Markdown 檔：`~/.claude/projects/<專案路徑>/memory/ctx-handoff.md`，可以直接改。
 
-整理只送上次之後的新對話給 Sonnet 5.5（effort low），短對話約 1,200 token、1.6 秒。像金鑰、密碼的內容不會寫進去。
+整理只送上次之後的新對話給 Sonnet 5.5（effort low），短對話約 1,200 token、1.6 秒。像金鑰、密碼的內容不會寫進筆記。
 
 ### 守門
 
@@ -124,6 +124,41 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 
 **門檻怎麼選**：一般經驗是模型品質在 200k～300k token 左右開始下滑。預設 600k 是為了少交接幾次；如果你發現交接前模型已經開始變差，就調低它。
 
+## 費用與隱私
+
+**會花多少。** 所有請求都用你自己的 Claude Code 登入，和其他請求一樣計入用量：
+
+- **交接：** 一次請求，讀整段對話（大多從快取讀）並寫出摘要；800k token 的對話約 30 秒。
+- **離開時保持快取：** 每次是一個很小的請求，從快取讀整段對話，價格約是一般輸入的十分之一。每段閒置最多 3 次。
+- **專案筆記：** 只送新增的對話給 Sonnet 5.5（effort low），短的一次約 1,200 token。
+
+**哪些資料會送出去。** 只會經由 Claude Code 送到 Anthropic，和你的對話本身去的地方相同。整理筆記時會送出你的訊息、Claude 的回覆與工具呼叫（每個輸入取前 300 字、結果取前 500 字），總長最多 30 萬字。看起來像金鑰或密碼的筆記，寫檔前就會丟掉。
+
+**存在本機的檔案：**
+
+| 內容 | 位置 |
+|---|---|
+| 專案筆記 | `~/.claude/projects/<專案路徑>/memory/ctx-handoff.md` |
+| 從面板刪除的筆記備份 | 筆記檔旁邊的 `.ctx-handoff-backup/` |
+| 最近的交接摘要、錯誤紀錄與設定 | `~/.claude/plugins/store/ctx-handoff_*.json` |
+
+## 疑難排解
+
+先輸入 `/handoff`：它會顯示 context 用量、各功能是否開啟，以及背景最近一次的錯誤。
+
+| 狀況 | 怎麼查 |
+|---|---|
+| 沒有 `/handoff` 指令 | mod 沒載入。確認 Claude Code 版本支援 mod、路徑是絕對路徑。如果你自己有 `/handoff`，改用 `/ctx-handoff`。 |
+| 新對話沒收到交接摘要 | 執行 `/handoff resend`。 |
+| 筆記一直沒更新 | 小於 30k token 的對話會跳過。執行 `/handoff distill`，再用 `/handoff` 看有沒有錯誤。 |
+| 指令沒有回應 | 用 `/handoff` 看最近的錯誤，附上輸出[開一個 issue](https://github.com/cablate/ctx-handoff-mod/issues/new/choose)。 |
+
+## 移除
+
+1. 從 `~/.claude/settings.json` 的 `CLAUDE_CODE_PLUGIN_DIRS` 拿掉路徑（或不再加 `--plugin-dir`）。
+2. 刪掉 clone 下來的資料夾。
+3. 可選：刪除[存在本機的檔案](#費用與隱私)。專案筆記是一般的 Markdown，也可以留著自己用。
+
 ## 限制
 
 - **5 分鐘快取的使用者請關掉保持快取。** 用 API key、Bedrock、Vertex，或訂閱額度用完、開始扣 usage credits 時，快取只有 5 分鐘，55 分鐘後的請求反而要重寫整段快取。請執行 `/handoff refresh off`，它不會自動判斷。
@@ -131,13 +166,13 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 - **筆記跟著啟動的資料夾走。** 在家目錄開 Claude Code 處理別的專案，筆記會記在家目錄。
 - **交接中更新 mod 或改設定，暫存的訊息可能遺失。** 保持快取的計時不受影響。
 
-## 從 0.1 升級
+## 版本紀錄
 
-0.2 改成每個專案資料夾只有一份筆記，不再把筆記寫進 session 中途碰到的其他 repo。舊版放錯位置的筆記不會自動搬移，可以手動搬，或用 `node tools/notes.mjs`（見 [`tools/README.md`](tools/README.md)）。
+見 [`CHANGELOG.md`](CHANGELOG.md)（英文），包含從 0.1 升級要注意的事。
 
 ## 參與開發
 
-開發流程與設計說明在 [`CLAUDE.md`](CLAUDE.md)，工具一覽在 [`tools/README.md`](tools/README.md)。送出修改前請跑 `node tools/check.mjs`。
+問題回報與想法歡迎開 [issue](https://github.com/cablate/ctx-handoff-mod/issues/new/choose)。想改程式請看 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
 
 ## 授權
 
