@@ -1,6 +1,7 @@
 // 守門：把反覆被提醒的規則變成工具呼叫前的比對。型別、提示、模型提案的驗證與比對（純函式，不碰 $）
 import { t } from './i18n'
 import { ACTIONS_END, ACTIONS_START } from './distill'
+import { inProject } from './notes'
 import type { Rule } from './notes'
 import { clip } from './transcript'
 
@@ -115,4 +116,53 @@ export function parseGuards(text: string, names: Set<string>) {
     }
   }
   return { out, rejected }
+}
+
+// ---------- 守門的資料變換與列表文字（register.ts 負責讀寫 store） ----------
+// 出現 GUARD_MIN_COUNT 次以上、還沒有守門（任何狀態）的規則
+export const guardCandidatesOf = (rules: Rule[], guards: Guard[]) =>
+  rules.filter(r => r.count >= GUARD_MIN_COUNT && !inProject(r) && !guards.some(g => g.rule === r.name))
+
+// 模型提的草稿加上編號、狀態與試比對（這段對話已跑過的工具呼叫命中幾次）
+export function withProposals(out: ReturnType<typeof parseGuards>['out'], guards: Guard[], calls: { tool: string; input: Record<string, unknown> }[], at: number) {
+  let id = guards.reduce((n, g) => Math.max(n, g.id), 0)
+  return out.map(g => ({
+    ...g, id: ++id, state: 'proposed' as const, hits: 0, at,
+    replay: { hits: calls.filter(c => guardHits(g, c.tool, inputText(c.input))).length, calls: calls.length },
+  }))
+}
+
+export function guardListText(guards: Guard[]) {
+  const m = t()
+  if (guards.length === 0) return m.guard.none(GUARD_MIN_COUNT)
+  return [
+    m.guard.listHead,
+    ...guards.flatMap(g => [
+      m.guard.entry(g.id, m.guard.state[g.state], m.guard.mode[g.mode], g.rule, g.hits),
+      `${m.ind}${m.guardMatch(g.tool, g.match, g.unless)}`,
+      `${m.ind}→ ${g.message}`,
+      ...(g.bad && g.good ? [`${m.ind}${m.guard.example(clip(g.bad, 80), clip(g.good, 80))}`] : []),
+      ...(g.replay ? [`${m.ind}${m.guard.replay(g.replay.calls, g.replay.hits)}`] : []),
+    ]),
+  ].join('\n')
+}
+
+export function guardSummaryText(guards: Guard[], candidates: number) {
+  const count = (s: GuardState) => guards.filter(g => g.state === s).length
+  return t().guard.summary(count('on'), count('proposed'), count('off')) +
+    (candidates ? t().guard.summaryMore(candidates, GUARD_MIN_COUNT) : '')
+}
+
+// /handoff guard 的子指令換成要做的改動：on／off／drop 原樣，mode 要帶合法的模式，其他回 undefined
+export const guardChangeOf = (action: string, modeText: string) =>
+  action === 'on' || action === 'off' || action === 'drop' ? action
+    : action === 'mode' ? GUARD_MODES.find(m => m === modeText) : undefined
+
+// 啟用／停用／刪除／換模式；回傳改到的那一條與新的清單，找不到回 undefined
+export function applyGuardChange(guards: Guard[], id: number, change: 'on' | 'off' | 'drop' | GuardMode) {
+  const g = guards.find(x => x.id === id)
+  if (!g) return undefined
+  const updated = change === 'drop' ? guards.filter(x => x !== g)
+    : guards.map(x => (x !== g ? x : change === 'on' || change === 'off' ? { ...x, state: change } : { ...x, mode: change }))
+  return { g, updated }
 }

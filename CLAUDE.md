@@ -60,6 +60,7 @@ node tools/status.mjs             # 確認各 session 已熱重載、看整理�
 | 工具註冊與重開 | `$.tool.register` 的工具跟著模組：熱重載或 session 重開（對話檔有 `SessionStart:resume`，新 process、回合數接續）時沒再註冊，引擎就撤掉它（`deferred_tools_delta` 的 `retractedTools`，cause `not_configured`）。MCP 工具延後載入時，中途註冊只多一筆可用工具提示，不動快取前綴 |
 | `userConfig` 與 `/config` | 實測（2.1.292）：clone 載入（`--plugin-dir`、`CLAUDE_CODE_PLUGIN_DIRS`）與 `claude -p`（含 marketplace 安裝）時，`$.config.list()` 沒有本 plugin 的列；`$.settings.read().pluginConfigs` 讀得到 `--settings` 與 `settings.json` 的值。project／local 範圍的 settings 不讀 `pluginConfigs`（debug 紀錄明說） |
 | 保持快取 | 實機紀錄：第 2、3 次刷新（閒置 110、165 分鐘）`cache_creation=0`，整段從快取讀，刷新確實延長了快取 |
+| 跨檔案傳 `$` | `$` 只能在同一檔案裡往下傳（plugin 載入時的靜態檢查，tsc 看不出來）：把 `$` 傳給從別的檔案 import 的函式，plugin 會載入失敗（`$ is followed only into a function declared in this same file`）。碰 `$` 的流程都留在 `register.ts`，拆檔只搬純函式（資料進、資料出；`rt` 狀態、`cfg` 設定與 `t()` 這類不碰 `$` 的可以跨檔案） |
 
 ## 測試引擎的限制
 
