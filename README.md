@@ -72,6 +72,8 @@ To load the clone in every session, add its absolute path to `env` in `~/.claude
 
 Once context reaches 600k tokens (80% on smaller windows), it waits until Claude finishes its turn and any background tasks and subagents are done. Then it writes a handoff summary, clears the conversation and sends the summary into the new one. The new conversation first reports what it understood, then waits for you.
 
+The summary separates what was verified (tests run, results seen) from what was only changed, lists approaches that failed so they aren't retried, notes anything still running or unsaved, and keeps limits you set during the work, such as "ask before pushing".
+
 If background work never finishes (a dev server, say), it hands off anyway once context is 150k tokens past the threshold (and no later than 90% of the window). Type `/handoff now` to hand off sooner.
 
 Anything you type during a handoff isn't lost; it is sent to the new conversation with the summary. Images and other attachments can't be held, and you're told to paste them again.

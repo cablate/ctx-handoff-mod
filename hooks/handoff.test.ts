@@ -415,3 +415,12 @@ test('S9 已攔下訊息的離席狀態不會因回合完成被刪', async ($, o
 })
 
 // ---------- S10：長路徑專案 ----------
+
+// 2026-10-08：交接摘要要分開已驗證與未驗證、列出失敗過的做法、還在跑的東西與使用者的限制，避免接手時做錯
+test('交接提示：要求分開已驗證與未驗證、失敗做法、沒收尾的東西、使用者限制', async ($, on) => {
+  const w = world(on, 650_000)
+  await stop($)
+  await w.clock.advance(0)
+  const prompt = w.forks.find(p => p.includes('HANDOFF:')) ?? ''
+  for (const part of ['已驗證', '未驗證', '試過但失敗', '還在跑', '使用者在這次工作中給的限制', '一個具體動作']) expect(prompt).toContain(part)
+})

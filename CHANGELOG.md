@@ -4,6 +4,10 @@ Notable changes to ctx-handoff. Versions follow the `version` in `.claude-plugin
 
 ## Unreleased
 
+### Added
+
+- **Better handoff summaries:** the summary now separates verified work from unverified changes, lists approaches that failed, notes anything still running or unsaved, keeps limits you set during the work, and ends with one concrete next step.
+
 ### Changed
 
 - Code checks add Biome lint (`biome.json`, run by `tools/check.mjs` and CI through `npx`, no npm dependency).
