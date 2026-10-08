@@ -111,12 +111,13 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 
 同一條規則出現 3 次以上，`/handoff guard suggest` 會把它寫成工具呼叫的檢查，例如「git push 前沒跑測試」，可設成擋下或提醒。**要你 `/handoff guard on N` 核准才生效**；檢查本身出錯就放行。
 
-### 兩個防呆提醒
+### 三個防呆提醒
 
 預設都開；都只是對 Claude 說一句話，不會擋你的工具。
 
 - **重複失敗：** 同一個工具連續兩次因同樣原因失敗時，第二次的結果會附一句話，請 Claude 先找出原因、換個做法，不要原樣重試。每一段連續失敗只提醒一次，該工具成功就重新算。設定：`retry_nudge`。
 - **說完成卻沒驗證：** Claude 說做完了、這一輪改過程式檔、之後沒跑任何測試、建置或檢查時，會請它先驗證並附上結果（沒辦法驗證就說明哪些沒驗證），一個回合最多一次。只改文件（`.md`、`.txt`）或你中斷的回合不算。Claude Code 會把這個請求顯示成「Stop hook feedback」，並可能提示 Stop hook error，那就是這個提醒，不是出錯。設定：`done_check`。
+- **回覆語言：** Claude 的說明大部分不是你用的語言（繁體中文、簡體中文、英文或日文）時，會請它改用那個語言說明一次；程式碼、指令、路徑、連結、引用行、專有名詞與很短的句子都不算，所以夾英文術語的中文沒問題。提醒跟著下一個工具結果；那段回覆是最終回答的話，就跟著你的下一則訊息。每一段只提醒一次，有一則回覆符合語言就重新算。`auto` 跟著 Claude Code 的 `language` 設定（沒設，或只寫「中文」沒分繁簡，就不提醒）。你要它寫別種語言的內容（例如翻譯）時，也可能提醒一次。設定：`reply_language`。
 
 ### 面板
 
@@ -163,6 +164,7 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 | `language` | `auto` | 介面語言：`auto`、`en` 或 `zh-TW` |
 | `retry_nudge` | `true` | 同一個失敗連續兩次時，請 Claude 換個做法 |
 | `done_check` | `true` | Claude 改了檔案、沒跑測試或檢查就說完成時，請它先驗證一次 |
+| `reply_language` | `auto` | 請 Claude 用你的語言說明：`auto`（跟著 Claude Code 的 `language`）、`off`、`zh-TW`、`zh-CN`、`en` 或 `ja` |
 | `resume_hint` | `true` | 新對話開頭告訴 Claude 這個資料夾上一段對話停在哪（一天內的） |
 
 超出允許範圍的值會被拉回範圍內。保持快取與專案筆記的開關用 `/handoff refresh on|off`、`/handoff distill on|off`。
@@ -191,7 +193,8 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 
 | 輸出裡的項目 | 用途 |
 |---|---|
-| `tool.call` | 套用你核准的守門（沒核准就不擋）；留意工具是否連續兩次失敗，以及這一輪改了哪些檔案、跑了哪些測試 |
+| `tool.call` | 套用你核准的守門（沒核准就不擋）；留意工具是否連續兩次失敗，以及這一輪改了哪些檔案、跑了哪些測試；附上回覆語言提醒 |
+| `turn.step` | 讀主對話每則回覆的可見文字，只用來判斷語言；不改請求、模型或回覆 |
 | `prompt.submit`、`prompt.context` | 交接中暫存你的訊息；把專案筆記與上一段對話停在哪帶入新對話 |
 | `$.session.messages`、`$.model.complete`、`$.model.fork` | 讀對話來寫筆記與交接摘要 |
 | `$.fs.read`、`$.fs.write`、`$.fs.exists` | 讀寫筆記檔與備份；確認專案是不是 git repo |

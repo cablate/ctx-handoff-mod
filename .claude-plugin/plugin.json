@@ -90,6 +90,20 @@
       "description": "When Claude says the work is done but edited files and ran no test or check since, ask it once to verify first.",
       "default": true
     },
+    "reply_language": {
+      "type": "string",
+      "title": "Reply language reminder",
+      "description": "When Claude's explanation is not in this language, remind it once (with the next tool result, or your next message). auto follows Claude Code's language setting (unset or just \"Chinese\" means off); off turns it off.",
+      "options": [
+        "auto",
+        "off",
+        "zh-TW",
+        "zh-CN",
+        "en",
+        "ja"
+      ],
+      "default": "auto"
+    },
     "resume_hint": {
       "type": "boolean",
       "title": "Offer where the last chat stopped",

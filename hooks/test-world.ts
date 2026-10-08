@@ -44,6 +44,10 @@ const fresh = () => ({
   stopBlock: undefined as string | undefined,
   // tool.call 底層的工具回覆：回 undefined 就是成功（{ result: 'ok' }）；測試用它模擬工具失敗
   toolReply: undefined as ((e: { tool: string; command?: string }) => { isError: true; result: string; text: string } | undefined) | undefined,
+  // turn.step 底層的模型回應（回覆語言提醒的測試用）
+  stepReply: { answer: '', toolUses: [] as { name: string; input: unknown }[] },
+  // 底層收到的 turn.step 請求（確認本 plugin 沒有改 model、effort）
+  stepSeen: undefined as { model: string; effort?: unknown } | undefined,
   curSid: 'S1',
   // session 啟動資料夾（P1）與目前工作目錄
   curRoot: 'C:\\proj',
@@ -161,6 +165,13 @@ export const world = (on: On, tokens: number, window = 1_000_000, store: Record<
     await ctl.onClear?.()
     return { text: '' }
   })
+  // 串流 hook 底層：不吐任何片段，直接回傳整個回應
+  // biome-ignore lint/correctness/useYield: 底層不需要 yield
+  on('turn.step', async function* (_$, e) {
+    ctl.stepSeen = e
+    const { answer, toolUses } = ctl.stepReply
+    return { turnId: 't1', index: 0, answer, toolUses, stopReason: toolUses.length > 0 ? ('tool_use' as const) : ('end_turn' as const), usage: null }
+  })
   on('turn.complete', () => ({ text: '' }))
   on('classic.Stop', () => (ctl.stopBlock !== undefined ? { block: ctl.stopBlock } : {}))
   on('agent.list', () => ({ value: agents.map(a => ({ ...a, description: '', type: 'general-purpose' })) as never }))
@@ -186,6 +197,17 @@ export const say = ($: Engine, text: string) => $.prompt.submit({ text, origin: 
 export const startSession = ($: Engine) => $.session.start({ cwd: 'C:/proj', surface: null, isInteractive: true })
 export const task = (status = 'running') => ({ id: 'b1', type: 'shell', status, description: 'sleep 999' })
 export const cron = (recurring: boolean) => ({ id: 'c1', schedule: '0 9 * * *', recurring, prompt: 'check' })
+
+// 模型回應一步：answer 是這步的說明文字，tools 是這步要呼叫幾個工具；agentId 有值＝子代理的步驟
+export const step = async ($: Engine, answer: string, opts: { tools?: number; agentId?: string } = {}) => {
+  ctl.stepReply = { answer, toolUses: Array.from({ length: opts.tools ?? 0 }, () => ({ name: 'Read', input: {} })) }
+  const stream = $.turn.step({ turnId: 't1', index: 0, model: 'm', messageCount: 1, ...(opts.agentId ? { agentId: opts.agentId } : {}) })
+  // 讀到結束：generator 的回傳值就是這步的回應
+  for (;;) {
+    const it = await stream.next()
+    if (it.done) return it.value
+  }
+}
 
 export const endTurn = ($: Engine) =>
   $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })

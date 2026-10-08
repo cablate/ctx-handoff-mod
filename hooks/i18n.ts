@@ -137,7 +137,7 @@ const zh = {
   // 防呆提醒
   loops: {
     doneLog: '說完成了，但這一輪改檔之後沒有跑測試或檢查，已請 AI 先驗證',
-    status: (retry: string, done: string) => `防呆提醒：重複失敗 ${retry}，完成前驗證 ${done}`,
+    status: (retry: string, done: string, reply: string) => `防呆提醒：重複失敗 ${retry}，完成前驗證 ${done}，回覆語言 ${reply}`,
   },
 
   // 進度備忘
@@ -462,7 +462,7 @@ const en: Messages = {
 
   loops: {
     doneLog: 'Said done, but no test or check ran after the edits this turn; asked Claude to verify first',
-    status: (retry, done) => `Nudges: repeated failure ${retry}, verify before done ${done}`,
+    status: (retry, done, reply) => `Nudges: repeated failure ${retry}, verify before done ${done}, reply language ${reply}`,
   },
 
   progress: {

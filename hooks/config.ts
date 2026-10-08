@@ -1,5 +1,7 @@
 // 使用者設定（userConfig）的型別、預設值、範圍檢查，以及固定參數（純函式，不碰 $；讀設定在 register.ts）
 import type { Lang } from './i18n'
+import { isReplyLangSetting } from './lang'
+import type { ReplyLangSetting } from './lang'
 
 // 使用者設定：plugin.json 的 userConfig，值存在使用者自己 settings.json 的 pluginConfigs，更新 plugin 不會覆蓋。
 // 這裡是預設值；第一次用到時讀，使用者在 /config 改了（config.set）再讀。兩個開關（保持快取、專案筆記）仍用指令存在 store
@@ -16,12 +18,14 @@ type Config = {
   language: 'auto' | Lang
   // 防呆提醒：同樣的失敗連續兩次就提醒換做法；說完成了卻沒驗證就擋一次
   retryNudge: boolean; doneCheck: boolean
+  // 回覆語言提醒：Claude 的說明不是這個語言時，在工具結果或下一則訊息提醒一次（auto 跟著 Claude Code 的 language 設定）
+  replyLanguage: ReplyLangSetting
   // 新對話開頭提供上一段對話停在哪（背景整理留下的進度備忘）
   resumeHint: boolean
 }
 const CONFIG_DEFAULTS: Config = {
   threshold: 600_000, windowRatio: 0.8, idleMs: 55 * 60_000, maxRefresh: 3, minTokens: 30_000,
-  notesModel: 'claude-sonnet-5-5', language: 'auto', retryNudge: true, doneCheck: true, resumeHint: true,
+  notesModel: 'claude-sonnet-5-5', language: 'auto', retryNudge: true, doneCheck: true, replyLanguage: 'auto', resumeHint: true,
 }
 export const CONFIG_PREFIX = 'ctx-handoff.'
 // 目前的設定：只改欄位、不換物件，各檔 import 到的是同一份
@@ -79,6 +83,7 @@ export function resolveConfig(
   const d = CONFIG_DEFAULTS
   const model = get('notes_model')
   const lang = get('language')
+  const replyLang = get('reply_language')
   return {
     threshold: num('threshold', 50_000, 2_000_000, d.threshold),
     windowRatio: num('window_ratio', 0.3, 0.95, d.windowRatio),
@@ -89,6 +94,7 @@ export function resolveConfig(
     language: lang === 'en' || lang === 'zh-TW' ? lang : 'auto',
     retryNudge: bool('retry_nudge', d.retryNudge),
     doneCheck: bool('done_check', d.doneCheck),
+    replyLanguage: isReplyLangSetting(replyLang) ? replyLang : d.replyLanguage,
     resumeHint: bool('resume_hint', d.resumeHint),
   }
 }

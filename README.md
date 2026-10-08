@@ -113,12 +113,13 @@ The next conversation in the same folder is told about it once, as a hint to Cla
 
 Once a rule comes up 3 times, `/handoff guard suggest` turns it into a check on tool calls, e.g. "git push without running tests", set to block or remind. **Nothing applies until you approve it with `/handoff guard on N`**; if a check fails, the call goes through.
 
-### Two safety nudges
+### Three safety nudges
 
-Both are on by default; each is a plain message to Claude, never a block on your tools.
+All are on by default; each is a plain message to Claude, never a block on your tools.
 
 - **Repeated failure:** if the same tool fails twice in a row for the same reason, the second result carries a note telling Claude to find the cause and change approach instead of retrying as is. Once per streak; a success of that tool starts over. Setting: `retry_nudge`.
 - **"Done" without checking:** if Claude says the work is done, edited code files this turn, and ran no test, build or check afterwards, it is asked once to verify and show the result (or say what it couldn't verify). Edits to docs (`.md`, `.txt`) and turns you interrupt don't count. Claude Code shows the request as "Stop hook feedback" and may flag it as a Stop hook error; that is this reminder, not a failure. Setting: `done_check`.
+- **Reply language:** if Claude's explanation is mostly not in your language (Traditional or Simplified Chinese, English or Japanese), it is reminded once to explain in that language; code, commands, paths, links, quoted lines, proper nouns and very short lines don't count, so Chinese with English terms in it is fine. The note rides on the next tool result, or on your next message when the reply was a final answer. Once per streak; one reply in the right language starts over. `auto` follows Claude Code's `language` setting (not set, or just "Chinese" without Traditional or Simplified, means off). It also fires when you asked for text in another language, such as a translation. Setting: `reply_language`.
 
 ### Panel
 
@@ -165,6 +166,7 @@ For a clone, use the key `ctx-handoff@inline` instead.
 | `language` | `auto` | Message language: `auto`, `en` or `zh-TW` |
 | `retry_nudge` | `true` | Tell Claude to change approach after the same failure twice in a row |
 | `done_check` | `true` | Ask Claude to verify once when it says "done" after editing files without running a test or check |
+| `reply_language` | `auto` | Remind Claude to explain in your language: `auto` (follow Claude Code's `language`), `off`, `zh-TW`, `zh-CN`, `en` or `ja` |
 | `resume_hint` | `true` | Tell a new conversation where the last one in this folder stopped (if within a day) |
 
 Values outside the allowed range are pulled back into it. Cache keeping and project notes are switched with `/handoff refresh on|off` and `/handoff distill on|off`.
@@ -193,7 +195,8 @@ Values outside the allowed range are pulled back into it. Cache keeping and proj
 
 | In the output | Why |
 |---|---|
-| `tool.call` | Applies guards you approved (none until you approve one); notices a tool failing twice in a row and which files were edited or tests run this turn |
+| `tool.call` | Applies guards you approved (none until you approve one); notices a tool failing twice in a row and which files were edited or tests run this turn; carries the reply-language reminder |
+| `turn.step` | Reads the visible text of each of Claude's replies in the main conversation to check its language; it doesn't change the request, the model or the reply |
 | `prompt.submit`, `prompt.context` | Holds your message during a handoff; loads project notes, and where the last conversation stopped, into a new conversation |
 | `$.session.messages`, `$.model.complete`, `$.model.fork` | Reads the conversation to write notes and handoff summaries |
 | `$.fs.read`, `$.fs.write`, `$.fs.exists` | Reads and writes the notes file and its backups; checks whether the project is a git repo |

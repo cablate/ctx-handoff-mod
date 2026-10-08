@@ -18,6 +18,7 @@ import type { Row } from './transcript'
 import { CONFIG_PREFIX, DISTILL_EFFORT, DISTILL_EVERY, DISTILL_GRACE_MS, DISTILL_MAX_TOKENS, DISTILL_TIMEOUT_MS, GUARD_MAX_TOKENS, HANDOFF_TIMEOUT_MS, KEEP, DEFER_CAP_EXTRA, DEFER_CAP_RATIO, RELOAD_GRACE_MS, RETRY_MS, RETRY_TURNS, STOPPED, cfg, optionsOf, resetConfig, resolveConfig, thresholdOf } from './config'
 import { resetRuntime, rt } from './runtime'
 import { doneCheck, freshWork, noteCall, trackFailure } from './loops'
+import { clearNext, noteStep, peekNext, resolveReplyLang, takePending } from './lang'
 import { awayKey, describeUsage, pendingKey, pruneSeen } from './records'
 import type { Away, DistillError, DistillLast, HandoffError, Kind, Saved, Usage } from './records'
 import { HANDOFF_PROMPT, forkFailure, heldBlock } from './handoff'
@@ -727,7 +728,8 @@ function panelActions($: EngineInterface): PanelActions {
 
 // 工具呼叫結束後的觀察（不碰 $，失敗一律放行原結果，絕不丟例外、不擋呼叫）：
 // A 同一個工具連續兩次因同樣原因失敗，在第 2 次的結果後面附一段提醒（context，模型看得到、使用者看不到）；
-// B 記下這一輪的改檔與驗證，給回合結束時的檢查用
+// B 記下這一輪的改檔與驗證，給回合結束時的檢查用；
+// C 主對話上一步的說明不是目標語言（watchReply 排的），在這個結果後面附回覆語言提醒
 function watchCall<R extends { deny?: string; isError?: boolean; text?: string; result?: unknown; context?: readonly string[] }>(
   e: { tool: string },
   r: R,
@@ -738,13 +740,43 @@ function watchCall<R extends { deny?: string; isError?: boolean; text?: string; 
     const agent = (e as { agentId?: string }).agentId ?? ''
     // 只記主對話自己的呼叫：子代理（含還在背景跑的）改檔或驗證不算主對話這一輪（2026-10-08 實機誤判）
     if (cfg.doneCheck && agent === '') noteCall(rt.work, e.tool, e as Record<string, unknown>, failed)
-    if (!cfg.retryNudge) return r
-    const text = r.text ?? (typeof r.result === 'string' ? r.result : undefined)
-    const nudge = trackFailure(rt.streaks, `${agent}|${e.tool}`, e.tool, failed, text)
-    return nudge ? { ...r, context: [...(r.context ?? []), nudge] } : r
+    const extra: string[] = []
+    if (cfg.retryNudge) {
+      const text = r.text ?? (typeof r.result === 'string' ? r.result : undefined)
+      const nudge = trackFailure(rt.streaks, `${agent}|${e.tool}`, e.tool, failed, text)
+      if (nudge) extra.push(nudge)
+    }
+    // 回覆語言：主對話上一步的說明不是目標語言，這個工具結果帶出提醒（子代理的結果不帶）
+    const reply = agent === '' ? takePending(rt.reply) : undefined
+    if (reply) extra.push(reply)
+    return extra.length ? { ...r, context: [...(r.context ?? []), ...extra] } : r
   } catch {
     return r
   }
+}
+
+// 回覆語言的目標：設定指定的語言；auto 跟著 Claude Code 的 language 設定，沒設或認不得就是 undefined（不提醒）。
+// 算一次就記住，設定改了（config.set）或熱重載才重算
+async function replyTarget($: EngineInterface) {
+  if (rt.replyTarget) return rt.replyTarget.lang
+  let setting: unknown
+  if (cfg.replyLanguage === 'auto') {
+    try { setting = (await $.settings.read()).language } catch { return undefined }
+  }
+  const lang = resolveReplyLang(cfg.replyLanguage, setting)
+  rt.replyTarget = { lang }
+  return lang
+}
+
+// turn.step 之後：主對話這一步的說明不是目標語言就排一次提醒（絕不丟例外、不改這一步的結果）。
+// 這步還要呼叫工具，提醒跟著下一個工具結果（watchCall）；最終回答則跟著使用者的下一則訊息（prompt.submit）
+async function watchReply($: EngineInterface, r: { answer: string; toolUses: readonly unknown[] }) {
+  try {
+    await initLang($)
+    if (cfg.replyLanguage === 'off' || !r.answer) return
+    const target = await replyTarget($)
+    if (target) noteStep(rt.reply, r.answer, r.toolUses.length > 0, target)
+  } catch {}
 }
 
 // 回合結束時說完成了，但這一輪改檔之後沒有跑任何測試或檢查：回傳要擋下停止的理由（每回合最多一次）。
@@ -804,9 +836,17 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // 回覆語言提醒：只看主對話的步驟，不改請求（model、effort 原封不動往下傳，不影響快取）
+  on('turn.step', async function* ($, e, next) {
+    const r = yield* next(e)
+    if (e.agentId === undefined) await watchReply($, r)
+    return r
+  })
+
   // 使用者在 /config 改了本 plugin 的設定：重讀，語言與閒置計時跟著換（本 plugin 自己的 $.config.set 不會進這裡）
   on('config.set', async ($, e, next) => {
     const out = await next(e)
+    if (out.deny === undefined) rt.replyTarget = undefined
     if (!e.key.startsWith(CONFIG_PREFIX) || out.deny !== undefined) return out
     const before = { ...cfg }
     await loadConfig($, { key: e.key, value: out.value })
@@ -980,10 +1020,15 @@ export const register: Register = on => {
       if (e.text !== away.held) msg = { ...e, text: `${away.held}\n\n${e.text}` }
     }
     // 背景整理的差異：只有訊息真的進了對話才帶入並清掉
+    // 回覆語言提醒也一樣：上一則回答不是目標語言的話，跟著這則訊息帶入
     const pend = rt.pendingNotes.get(sid)
-    if (!pend) return next(msg)
-    const r = await next({ ...msg, context: [...(msg.context ?? []), noteBlock(pend.changes, pend.file)] })
-    if ((r as { drop?: string }).drop === undefined) rt.pendingNotes.delete(sid)
+    const reply = peekNext(rt.reply)
+    if (!pend && reply.length === 0) return next(msg)
+    const r = await next({ ...msg, context: [...(msg.context ?? []), ...(pend ? [noteBlock(pend.changes, pend.file)] : []), ...reply] })
+    if ((r as { drop?: string }).drop === undefined) {
+      rt.pendingNotes.delete(sid)
+      clearNext(rt.reply)
+    }
     return r
   })
 
@@ -1019,8 +1064,14 @@ async function status($: EngineInterface) {
   const herr = (await $.store.get(`handoff:error:${pk}`)) as HandoffError | undefined
   return statusText({
     tokens: context.tokens, window: context.window, refreshOn: await isRefreshOn($), away, last: list.at(-1), herr,
-    distill: await distillStatus($), guards: await guardSummary($), progress: await progressStatus($),
+    distill: await distillStatus($), guards: await guardSummary($), progress: await progressStatus($), replyLang: await replyLangLabel($),
   })
+}
+
+// /handoff 狀態裡的回覆語言：auto 一併顯示解析出的結果
+async function replyLangLabel($: EngineInterface) {
+  if (cfg.replyLanguage !== 'auto') return cfg.replyLanguage
+  return `auto → ${(await replyTarget($)) ?? 'off'}`
 }
 
 async function progressStatus($: EngineInterface) {
