@@ -66,7 +66,7 @@ node tools/status.mjs             # 確認各 session 已熱重載、看整理�
 | 耗時 | handoff fork 在 800k context 約 28 秒 |
 | `$.tool.register` | `session.start` 註冊，回傳完整名稱 `mcp__<plugin>__<name>`；同一個 `tool.call` hook 依 `e.tool` 接手，回 `{ result: 字串 }`（回物件會被輸出格式檢查擋掉）。輸入參數直接展開在 `e` 上（`e.items`），不在 `e.input` |
 | 工具註冊與重開 | `$.tool.register` 的工具跟著模組：熱重載或 session 重開（對話檔有 `SessionStart:resume`，新 process、回合數接續）時沒再註冊，引擎就撤掉它（`deferred_tools_delta` 的 `retractedTools`，cause `not_configured`）。MCP 工具延後載入時，中途註冊只多一筆可用工具提示，不動快取前綴 |
-| `userConfig` 與 `/config` | 實測（2.1.292）：clone 載入（`--plugin-dir`、`CLAUDE_CODE_PLUGIN_DIRS`）與 `claude -p`（含 marketplace 安裝）時，`$.config.list()` 沒有本 plugin 的列；`$.settings.read().pluginConfigs` 讀得到 `--settings` 與 `settings.json` 的值。project／local 範圍的 settings 不讀 `pluginConfigs`（debug 紀錄明說） |
+| `userConfig` 與 `/config` | 實測（2.1.292）：clone 載入（`--plugin-dir`、`CLAUDE_CODE_PLUGIN_DIRS`）與 `claude -p`（含 marketplace 安裝）時，`$.config.list()` 沒有本 plugin 的列；`$.settings.read().pluginConfigs` 讀得到 `--settings` 與 `settings.json` 的值。project／local 範圍的 settings 不讀 `pluginConfigs`（debug 紀錄明說）。實測（2.1.295，2026-10-09）：`plugin.json` 完全不宣告 `userConfig` 時，`--settings` 的 `pluginConfigs["ctx-handoff@…"].options` 照樣讀得到（沒宣告過的 `reply_language` 也是）。0.5.0 曾漏刪前 7 列宣告 |
 | `classic.Stop` 回 `block` | 實測（2.1.292，`claude -p`）：模型接著再做一輪，看到的是使用者訊息「Stop hook feedback:
 <理由>」；第二次停止時沒有再擋（`reminded` 與 `stop_hook_active`）。引擎把它記成 `hookErrors`，畫面跳「Stop hook error occurred」通知，無法改 |
 | `tool.call` 結果的 `context` | 實測：附在工具結果後送給模型，模型回覆裡提到「hook 提醒不要原樣重試」，之後沒再跑同一個指令 |
