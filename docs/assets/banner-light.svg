@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="340" viewBox="0 0 1280 340" role="img" aria-label="ctx-handoff: the long-session toolkit for Claude Code">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#eef3fb"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0284c7"/>
+      <stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+    <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.2" fill="#0d1117" opacity="0.07"/>
+    </pattern>
+    <style>
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+      .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .pass { animation: pass 4.5s ease-in-out infinite; }
+      @keyframes pass {
+        0%, 20% { transform: translate(0, 0); opacity: 1; }
+        55%, 80% { transform: translate(92px, 0); opacity: 1; }
+        92% { transform: translate(92px, 0); opacity: 0; }
+        93% { transform: translate(0, 0); opacity: 0; }
+        100% { transform: translate(0, 0); opacity: 1; }
+      }
+      .glow { animation: glow 4.5s ease-in-out infinite; }
+      @keyframes glow { 0%, 50% { opacity: 0.35; } 65%, 85% { opacity: 1; } 100% { opacity: 0.35; } }
+    </style>
+  </defs>
+  <rect width="1280" height="340" rx="24" fill="url(#bg)"/>
+  <rect width="1280" height="340" rx="24" fill="url(#dots)"/>
+
+  <!-- mark: an old session hands a card to a new one -->
+  <g transform="translate(170 90)">
+    <rect x="0" y="20" width="120" height="120" rx="28" fill="#eaeef3" stroke="#d0d7de" stroke-width="2"/>
+    <rect x="22" y="48" width="64" height="9" rx="4.5" fill="#c3ccd6"/>
+    <rect x="22" y="68" width="76" height="9" rx="4.5" fill="#c3ccd6"/>
+    <rect x="22" y="88" width="52" height="9" rx="4.5" fill="#c3ccd6"/>
+    <rect x="22" y="108" width="70" height="9" rx="4.5" fill="#c3ccd6"/>
+    <rect class="glow" x="96" y="0" width="140" height="140" rx="32" fill="none" stroke="url(#accent)" stroke-width="4"/>
+    <rect x="96" y="0" width="140" height="140" rx="32" fill="#ffffff" opacity="0.95"/>
+    <rect x="96" y="0" width="140" height="140" rx="32" fill="none" stroke="url(#accent)" stroke-width="3"/>
+    <g class="pass">
+      <rect x="54" y="52" width="70" height="44" rx="9" fill="url(#accent)"/>
+      <rect x="64" y="64" width="40" height="6" rx="3" fill="#0d1117" opacity="0.7"/>
+      <rect x="64" y="78" width="28" height="6" rx="3" fill="#0d1117" opacity="0.7"/>
+    </g>
+  </g>
+
+  <text x="470" y="160" class="mono" font-size="86" font-weight="700" fill="#1f2328" letter-spacing="-2">ctx<tspan fill="url(#accent)">-</tspan>handoff</text>
+  <text x="474" y="212" class="sans" font-size="30" fill="#31363d">The long-session toolkit for Claude Code</text>
+  <text x="474" y="256" class="sans" font-size="21" fill="#59636e">Auto handoff · Warm cache while away · Project memory · Nudges on slips</text>
+</svg>

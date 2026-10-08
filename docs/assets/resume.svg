@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="240" viewBox="0 0 960 240" role="img" aria-label="Animation: you run /clear or reopen Claude Code; the next conversation is told once where the last one stopped: the task, its state and the next step">
+  <defs>
+    <style>
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+      .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .t { fill: #c9d1d9; font-size: 14px; } .m { fill: #8b949e; font-size: 13px; }
+      .k1 { animation: k1 8s linear infinite; } @keyframes k1 { 0%, 6% { opacity: 0; } 9%, 96% { opacity: 1; } 100% { opacity: 0; } }
+      .k2 { animation: k2 8s linear infinite; } @keyframes k2 { 0%, 24% { opacity: 0; transform: translateY(8px); } 30%, 96% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; } }
+      .k3 { animation: k3 8s linear infinite; } @keyframes k3 { 0%, 52% { opacity: 0; } 56%, 96% { opacity: 1; } 100% { opacity: 0; } }
+    </style>
+  </defs>
+  <rect width="960" height="240" rx="18" fill="#0d1117"/>
+  <text x="40" y="48" class="sans" font-size="17" font-weight="600" fill="#e6edf3">Cleared it yourself? The next conversation knows where you were.</text>
+
+  <rect x="40" y="70" width="880" height="140" rx="12" fill="#161b22" stroke="#30363d"/>
+  <text x="60" y="100" class="mono t k1"><tspan fill="#7dd3fc">›</tspan> /clear</text>
+  <g class="k2">
+    <rect x="56" y="114" width="848" height="56" rx="8" fill="#0f1724" stroke="#7dd3fc" stroke-opacity="0.6"/>
+    <text x="72" y="137" class="sans m">The last conversation (2 hours ago) stopped at:</text>
+    <text x="72" y="159" class="sans t">Panel settings tab · <tspan fill="#fbbf24">in progress</tspan> · last check: 216 tests pass · next: add the reset button</text>
+  </g>
+  <text x="60" y="196" class="mono t k3"><tspan fill="#7dd3fc">›</tspan> continue <tspan class="m">  — Claude picks up at "add the reset button"</tspan></text>
+</svg>

@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="320" viewBox="0 0 960 320" role="img" aria-label="Animation: you tell Claude the same thing on three days; ctx-handoff turns it into a rule loaded into every new conversation, and after the third time Claude adds it to the project's CLAUDE.md for you to review">
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7dd3fc"/>
+      <stop offset="1" stop-color="#a78bfa"/>
+    </linearGradient>
+    <style>
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+      .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .t { fill: #c9d1d9; font-size: 14px; } .m { fill: #8b949e; font-size: 13px; }
+      .b1 { animation: b1 10s linear infinite; } @keyframes b1 { 0%, 3% { opacity: 0; } 6%, 96% { opacity: 1; } 100% { opacity: 0; } }
+      .b2 { animation: b2 10s linear infinite; } @keyframes b2 { 0%, 18% { opacity: 0; } 21%, 96% { opacity: 1; } 100% { opacity: 0; } }
+      .b3 { animation: b3 10s linear infinite; } @keyframes b3 { 0%, 33% { opacity: 0; } 36%, 96% { opacity: 1; } 100% { opacity: 0; } }
+      .c1 { animation: c1 10s linear infinite; } @keyframes c1 { 0%, 8% { opacity: 0; } 10%, 22% { opacity: 1; } 24%, 100% { opacity: 0; } }
+      .c2 { animation: c2 10s linear infinite; } @keyframes c2 { 0%, 23% { opacity: 0; } 25%, 37% { opacity: 1; } 39%, 100% { opacity: 0; } }
+      .c3 { animation: c3 10s linear infinite; } @keyframes c3 { 0%, 38% { opacity: 0; } 40%, 96% { opacity: 1; } 100% { opacity: 0; } }
+      .rule { animation: rule 10s linear infinite; } @keyframes rule { 0%, 8% { opacity: 0.3; } 10%, 96% { opacity: 1; } 100% { opacity: 0.3; } }
+      .arrow { animation: arrow 10s linear infinite; } @keyframes arrow { 0%, 46% { opacity: 0; } 52%, 96% { opacity: 1; } 100% { opacity: 0; } }
+      .diff { animation: diff 10s linear infinite; } @keyframes diff { 0%, 56% { opacity: 0; } 62%, 96% { opacity: 1; } 100% { opacity: 0; } }
+    </style>
+  </defs>
+  <rect width="960" height="320" rx="18" fill="#0d1117"/>
+  <text x="40" y="48" class="sans" font-size="17" font-weight="600" fill="#e6edf3">Say it three times, and it becomes part of your repo.</text>
+
+  <!-- 你說過的話 -->
+  <g class="sans">
+    <g class="b1"><text x="40" y="96" class="m">Mon</text><rect x="84" y="78" width="252" height="30" rx="15" fill="#1f2937"/><text x="100" y="98" class="t">Use forward slashes in Bash paths</text></g>
+    <g class="b2"><text x="40" y="146" class="m">Wed</text><rect x="84" y="128" width="252" height="30" rx="15" fill="#1f2937"/><text x="100" y="148" class="t">Again: forward slashes, please</text></g>
+    <g class="b3"><text x="40" y="196" class="m">Fri</text><rect x="84" y="178" width="252" height="30" rx="15" fill="#1f2937"/><text x="100" y="198" class="t">Bash paths need forward slashes</text></g>
+  </g>
+  <path d="M352 143 h34" stroke="#30363d" stroke-width="3"/>
+  <path d="M378 135 l10 8 l-10 8" fill="none" stroke="#484f58" stroke-width="3"/>
+
+  <!-- 專案筆記裡的規則 -->
+  <g class="rule">
+    <rect x="404" y="78" width="230" height="130" rx="12" fill="#161b22" stroke="#30363d"/>
+    <text x="422" y="104" class="sans m">project notes · rule</text>
+    <text x="422" y="134" class="sans t">Forward slashes in</text>
+    <text x="422" y="154" class="sans t">Bash paths</text>
+    <g class="mono" font-size="22" font-weight="700">
+      <text x="604" y="190" text-anchor="end" fill="#8b949e" class="c1">1×</text>
+      <text x="604" y="190" text-anchor="end" fill="#7dd3fc" class="c2">2×</text>
+      <text x="604" y="190" text-anchor="end" fill="#4ade80" class="c3">3×</text>
+    </g>
+    <text x="422" y="190" class="sans m">loaded in new chats</text>
+  </g>
+
+  <g class="arrow"><path d="M650 143 h34" stroke="#4ade80" stroke-width="3"/><path d="M676 135 l10 8 l-10 8" fill="none" stroke="#4ade80" stroke-width="3"/></g>
+
+  <!-- repo 的 CLAUDE.md -->
+  <rect x="702" y="78" width="222" height="130" rx="12" fill="#161b22" stroke="url(#accent)" stroke-width="1.5"/>
+  <text x="720" y="104" class="mono m">CLAUDE.md</text>
+  <rect x="720" y="118" width="170" height="8" rx="4" fill="#30363d"/>
+  <rect x="720" y="134" width="130" height="8" rx="4" fill="#30363d"/>
+  <g class="diff">
+    <rect x="712" y="152" width="202" height="44" rx="6" fill="#12261b"/>
+    <text x="720" y="170" class="mono" font-size="13" fill="#4ade80">+ Use forward slashes</text>
+    <text x="720" y="188" class="mono" font-size="13" fill="#4ade80">+ in Bash paths</text>
+  </g>
+
+  <text x="40" y="258" class="sans m">Corrections, preferences and facts are noted per project and loaded into new conversations.</text>
+  <text x="40" y="282" class="sans m">At 3 times, Claude adds the rule to your repo (or turns a repeated routine into a skill). No commit: you review the diff.</text>
+</svg>

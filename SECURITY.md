@@ -10,4 +10,4 @@ Only the latest commit on `main` is supported.
 
 ctx-handoff is a Claude Code mod. Mods aren't sandboxed: it runs inside Claude Code with your permissions. It reads your conversation, sends parts of it to Anthropic's models through your own Claude Code sign-in, writes its notes file, and sees every tool call (to apply guards you approved). It makes no other network requests and starts no programs.
 
-See [Cost, privacy and permissions](README.md#cost-privacy-and-permissions) for what it sends and stores, and how to check its permissions yourself with `claude plugin validate`.
+See [Cost, privacy and permissions](docs/guide.md#cost-privacy-and-permissions) for what it sends and stores, and how to check its permissions yourself with `claude plugin validate`.

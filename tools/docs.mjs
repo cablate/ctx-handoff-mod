@@ -61,7 +61,8 @@ function changelogKey(title) {
 }
 
 // 互相連到對方語言的檔案不算差異：X.zh-TW.md 與 X.md 視為同一個目標
-const sameTarget = t => t.replace(/\.zh-TW\.md(?=$|#)/, '.md')
+// 錨點（#settings／#設定）跟著標題翻譯，只比到檔案為止
+const sameTarget = t => t.replace(/#.*$/, '').replace(/\.zh-TW\.md$/, '.md')
 
 // ---------- 比對 ----------
 

@@ -8,6 +8,7 @@ ctx-handoff 每個版本值得注意的改動。格式依照 [Keep a Changelog](
 
 ### 新增
 
+- **新的首頁：** README 以 banner 和動畫概覽開場，每個功能配一張圖，細節移到[使用指南](docs/guide.zh-TW.md)。
 - **繁體中文更新紀錄：** `CHANGELOG.zh-TW.md`，GitHub Release 也同時附上兩種語言。
 
 ## [0.5.0] - 2026-10-08

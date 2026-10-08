@@ -22,6 +22,8 @@ test('README：少一個清單項目、少一個表格列、少一個程式碼�
 test('README：多一個章節會被抓到；佔位文字可以翻譯', () => {
   assert.match(compare(EN, `${ZH}\n## 多的\n`).join('\n'), /標題數不同/)
   assert.deepEqual(compare('- `a/<name>/b`', '- `a/<名稱>/b`'), [])
+  // 錨點跟著標題翻譯
+  assert.deepEqual(compare('[s](docs/g.md#settings)', '[s](docs/g.zh-TW.md#設定)'), [])
 })
 
 const CL_EN = ['# Changelog', '', '## [Unreleased]', '', '## [1.1.0] - 2026-01-02', '', 'Faster.', '', '### Added', '', '- **X:** does x.', '', '### Fixed', '', '- y', '', '## [1.0.0] - 2026-01-01', '', 'First.', '', '[1.1.0]: https://example.com/compare/v1.0.0...v1.1.0', ''].join('\n')

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="300" viewBox="0 0 960 300" role="img" aria-label="Animation: three nudges. A command fails twice the same way and Claude is told to find the cause; Claude says done without running tests and is asked to verify; Claude drifts into English and is reminded to explain in your language">
+  <defs>
+    <style>
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+      .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .t { fill: #c9d1d9; font-size: 14px; } .m { fill: #8b949e; font-size: 13px; }
+      .n { fill: #fbbf24; font-size: 14px; }
+      .a1 { animation: a1 9s linear infinite; } @keyframes a1 { 0%, 4% { opacity: 0; } 7%, 96% { opacity: 1; } 100% { opacity: 0; } }
+      .a2 { animation: a2 9s linear infinite; } @keyframes a2 { 0%, 14% { opacity: 0; } 18%, 96% { opacity: 1; } 100% { opacity: 0; } }
+      .b1 { animation: b1 9s linear infinite; } @keyframes b1 { 0%, 34% { opacity: 0; } 37%, 96% { opacity: 1; } 100% { opacity: 0; } }
+      .b2 { animation: b2 9s linear infinite; } @keyframes b2 { 0%, 44% { opacity: 0; } 48%, 96% { opacity: 1; } 100% { opacity: 0; } }
+      .c1 { animation: c1 9s linear infinite; } @keyframes c1 { 0%, 64% { opacity: 0; } 67%, 96% { opacity: 1; } 100% { opacity: 0; } }
+      .c2 { animation: c2 9s linear infinite; } @keyframes c2 { 0%, 74% { opacity: 0; } 78%, 96% { opacity: 1; } 100% { opacity: 0; } }
+    </style>
+  </defs>
+  <rect width="960" height="300" rx="18" fill="#0d1117"/>
+  <text x="40" y="48" class="sans" font-size="17" font-weight="600" fill="#e6edf3">Catches the usual slips, mid-turn.</text>
+  <text x="40" y="72" class="sans m">A one-line note to Claude. It never blocks your tools.</text>
+
+  <g transform="translate(40 96)">
+    <rect width="280" height="170" rx="12" fill="#161b22" stroke="#30363d"/>
+    <text x="18" y="30" class="sans m">Same failure twice</text>
+    <g class="a1 mono"><text x="18" y="62" class="t">$ npm test</text><text x="18" y="84" font-size="13" fill="#f87171">✗ Cannot find module './cfg'</text></g>
+    <g class="a1 mono"><text x="18" y="106" font-size="13" fill="#f87171">✗ Cannot find module './cfg'</text></g>
+    <g class="a2"><rect x="10" y="120" width="260" height="38" rx="8" fill="#2a2210"/><text x="22" y="144" class="sans n">→ find the cause, change approach</text></g>
+  </g>
+
+  <g transform="translate(340 96)">
+    <rect width="280" height="170" rx="12" fill="#161b22" stroke="#30363d"/>
+    <text x="18" y="30" class="sans m">"Done" without checking</text>
+    <g class="b1 mono"><text x="18" y="62" class="m">edited 3 code files</text><text x="18" y="84" class="m">no test, build or check since</text></g>
+    <g class="b1 sans"><text x="18" y="106" class="t">Claude: All done!</text></g>
+    <g class="b2"><rect x="10" y="120" width="260" height="38" rx="8" fill="#2a2210"/><text x="22" y="144" class="sans n">→ verify once, show the result</text></g>
+  </g>
+
+  <g transform="translate(640 96)">
+    <rect width="280" height="170" rx="12" fill="#161b22" stroke="#30363d"/>
+    <text x="18" y="30" class="sans m">Drifting out of your language</text>
+    <g class="c1 sans"><text x="18" y="62" class="t">Claude: 先看設定檔的格式。</text><text x="18" y="84" class="t">Claude: Now let me check the</text><text x="18" y="106" class="t">loader and run the tests…</text></g>
+    <g class="c2"><rect x="10" y="120" width="260" height="38" rx="8" fill="#2a2210"/><text x="22" y="144" class="sans n">→ 請用繁體中文說明</text></g>
+  </g>
+</svg>

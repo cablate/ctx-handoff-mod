@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="420" viewBox="0 0 960 420" role="img" aria-label="Animation: a long Claude Code session fills its context up to the threshold; ctx-handoff writes a summary of verified work, failed attempts and the next step, clears, and a fresh session continues from the summary">
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7dd3fc"/>
+      <stop offset="1" stop-color="#a78bfa"/>
+    </linearGradient>
+    <style>
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+      .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .t { fill: #c9d1d9; font-size: 15px; }
+      .m { fill: #8b949e; font-size: 13px; }
+      .you { fill: #7dd3fc; }
+      .ok { fill: #4ade80; } .bad { fill: #f87171; } .next { fill: #fbbf24; }
+      /* 10 秒一輪：0–45% 舊對話變長、45–55% 寫摘要、55–70% 卡片移到新對話、70–100% 新對話接著做 */
+      .fill { animation: fill 10s linear infinite; transform-box: fill-box; transform-origin: left center; }
+      @keyframes fill { 0% { transform: scaleX(0.45); fill: #7dd3fc; } 42% { transform: scaleX(1); fill: #7dd3fc; } 46%, 100% { transform: scaleX(1); fill: #fbbf24; } }
+      .l1 { animation: l1 10s linear infinite; } @keyframes l1 { 0%, 100% { opacity: 1; } }
+      .l2 { animation: l2 10s linear infinite; } @keyframes l2 { 0%, 8% { opacity: 0; } 10%, 100% { opacity: 1; } }
+      .l3 { animation: l3 10s linear infinite; } @keyframes l3 { 0%, 18% { opacity: 0; } 20%, 100% { opacity: 1; } }
+      .l4 { animation: l4 10s linear infinite; } @keyframes l4 { 0%, 28% { opacity: 0; } 30%, 100% { opacity: 1; } }
+      .warn { animation: warn 10s linear infinite; } @keyframes warn { 0%, 43% { opacity: 0; } 46%, 100% { opacity: 1; } }
+      .old { animation: old 10s linear infinite; } @keyframes old { 0%, 60% { opacity: 1; } 70%, 96% { opacity: 0.35; } 100% { opacity: 1; } }
+      .card { animation: card 10s ease-in-out infinite; }
+      @keyframes card {
+        0%, 46% { opacity: 0; transform: translate(0, 12px); }
+        52%, 58% { opacity: 1; transform: translate(0, 0); }
+        70%, 92% { opacity: 1; transform: translate(472px, 0); }
+        97%, 100% { opacity: 0; transform: translate(472px, 0); }
+      }
+      .fresh { animation: fresh 10s linear infinite; } @keyframes fresh { 0%, 72% { opacity: 0; } 76%, 96% { opacity: 1; } 100% { opacity: 0; } }
+      .fresh2 { animation: fresh2 10s linear infinite; } @keyframes fresh2 { 0%, 80% { opacity: 0; } 84%, 96% { opacity: 1; } 100% { opacity: 0; } }
+      .newwin { animation: newwin 10s linear infinite; } @keyframes newwin { 0%, 60% { opacity: 0.35; } 68%, 96% { opacity: 1; } 100% { opacity: 0.35; } }
+    </style>
+  </defs>
+
+  <rect width="960" height="420" rx="18" fill="#0d1117"/>
+
+  <!-- 舊對話 -->
+  <g class="old">
+    <rect x="24" y="24" width="440" height="372" rx="12" fill="#161b22" stroke="#30363d"/>
+    <circle cx="46" cy="46" r="5" fill="#f87171"/><circle cx="64" cy="46" r="5" fill="#fbbf24"/><circle cx="82" cy="46" r="5" fill="#4ade80"/>
+    <text x="244" y="51" text-anchor="middle" class="sans m">session 1 · 3 hours in</text>
+    <text x="44" y="96" class="mono t l1"><tspan class="you">›</tspan> refactor the settings loader</text>
+    <text x="44" y="126" class="mono m l1">  Edited config.ts, register.ts · tests pass</text>
+    <text x="44" y="166" class="mono t l2"><tspan class="you">›</tspan> now move toggles to the panel</text>
+    <text x="44" y="196" class="mono m l2">  Retry with --force… failed twice</text>
+    <text x="44" y="236" class="mono t l3"><tspan class="you">›</tspan> ask me before pushing</text>
+    <text x="44" y="266" class="mono m l3">  Noted.</text>
+    <text x="44" y="306" class="mono t l4"><tspan class="you">›</tspan> keep going</text>
+    <!-- context 計量條 -->
+    <text x="44" y="352" class="sans m">context</text>
+    <rect x="104" y="341" width="300" height="14" rx="7" fill="#21262d"/>
+    <rect class="fill" x="104" y="341" width="300" height="14" rx="7"/>
+    <text x="414" y="352" class="mono m warn" fill="#fbbf24">600k</text>
+    <text x="104" y="378" class="sans m warn" fill="#fbbf24">threshold reached · Claude finished its turn</text>
+  </g>
+
+  <!-- 新對話 -->
+  <g class="newwin">
+    <rect x="496" y="24" width="440" height="372" rx="12" fill="#161b22" stroke="url(#accent)" stroke-width="1.5"/>
+    <circle cx="518" cy="46" r="5" fill="#f87171"/><circle cx="536" cy="46" r="5" fill="#fbbf24"/><circle cx="554" cy="46" r="5" fill="#4ade80"/>
+    <text x="716" y="51" text-anchor="middle" class="sans m">session 2 · fresh</text>
+    <text x="516" y="318" class="mono t fresh">Claude: Settings loader is done and tested.</text>
+    <text x="516" y="342" class="mono t fresh2">Next: move toggles to the panel.</text>
+    <text x="516" y="366" class="mono m fresh2">Waiting for you.</text>
+    <text x="916" y="51" text-anchor="end" class="mono m fresh">9k</text>
+  </g>
+
+  <!-- 交接摘要卡片 -->
+  <g class="card">
+    <rect x="44" y="84" width="400" height="190" rx="12" fill="#0f1724" stroke="url(#accent)" stroke-width="2"/>
+    <text x="64" y="114" class="sans" font-size="16" font-weight="600" fill="#e6edf3">Handoff summary</text>
+    <text x="64" y="146" class="mono t"><tspan class="ok">✓</tspan> Verified: settings loader, tests pass</text>
+    <text x="64" y="174" class="mono t"><tspan class="bad">✗</tspan> Failed: retrying with --force</text>
+    <text x="64" y="202" class="mono t"><tspan class="you">!</tspan> Limit: ask before pushing</text>
+    <text x="64" y="230" class="mono t"><tspan class="next">→</tspan> Next: move toggles to the panel</text>
+    <text x="64" y="258" class="sans m">/clear → sent to the new session</text>
+  </g>
+</svg>

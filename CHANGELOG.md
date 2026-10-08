@@ -8,6 +8,7 @@ All notable changes to ctx-handoff. The format follows [Keep a Changelog](https:
 
 ### Added
 
+- **A new front page:** the README opens with a banner and an animated overview, shows each feature in a picture, and moves the details into a [guide](docs/guide.md).
 - **Changelog in Traditional Chinese:** `CHANGELOG.zh-TW.md`, and GitHub Releases carry both languages.
 
 ## [0.5.0] - 2026-10-08
