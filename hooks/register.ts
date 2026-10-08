@@ -918,7 +918,7 @@ export const register: Register = on => {
   })
 
   // 使用者在 /config 改了 Claude Code 的設定（例如 language）：回覆語言 auto 要重新解析
-  on('config.set', async ($, e, next) => {
+  on('config.set', async (_$, e, next) => {
     const out = await next(e)
     if (out.deny === undefined) rt.replyTarget = undefined
     return out
