@@ -89,7 +89,7 @@ After about 55 idle minutes it sends a tiny request to keep the conversation cac
 
 What you correct or explain becomes notes for this project, loaded into each new conversation.
 
-**When it updates:** every 30 messages, after 55 idle minutes, before a handoff, or on `/handoff distill`. The status line counts down to the next update ("18 more messages until notes update") and says "Updating notes…" while updating. Conversations under 30k tokens are skipped.
+**When it updates:** every 30 messages (`distill_every`), after 55 idle minutes, before a handoff, or on `/handoff distill`. The status line counts down to the next update ("18 more messages until notes update") and says "Updating notes…" while updating. Conversations under 30k tokens are skipped.
 
 - **Memories:** preferences, corrections, facts and locations. Preferences and corrections load in full (only if they match something you said); facts and locations load as titles, and Claude reads the rest when needed. Facts and locations unconfirmed for 30 days are archived: not loaded, not deleted.
 - **Rules:** recurring practices, e.g. "Use forward slashes in Bash paths (3 times)". Loaded once seen twice, up to 15.
@@ -163,6 +163,7 @@ For a clone, use the key `ctx-handoff@inline` instead.
 | `window_ratio` | `0.8` | On smaller windows, the threshold is `window × ratio` |
 | `idle_minutes` | `55` | Idle minutes before each keep-warm request (5–59) |
 | `max_refresh` | `3` | Keep-warm requests per idle period, before saving a handoff instead |
+| `distill_every` | `30` | Your messages between notes updates (5–200) |
 | `min_tokens` | `30000` | Below this, skip cache keeping, away handoffs and notes |
 | `notes_model` | `claude-sonnet-5-5` | Model for project notes: Sonnet 5.5 or Opus 5.5 |
 | `language` | `auto` | Message language: `auto`, `en` or `zh-TW` |

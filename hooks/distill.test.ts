@@ -136,6 +136,15 @@ test('每 30 則訊息整理一次；不到 30 則不整理', async ($, on) => {
   expect(w.forks.length).toBe(1)
 })
 
+test('設定 distill_every：改成每 10 則就整理，狀態列倒數跟著它', async ($, on) => {
+  const w = world(on, 100_000, 1_000_000, {}, [], 10)
+  ctl.panelSettings = { distill_every: 10 }
+  await endTurn($)
+  await w.clock.advance(0)
+  expect(w.forks.length).toBe(1)
+  expect((await cmd($, '')).text).toContain('每 10 則')
+})
+
 test('重複整理：同一條記憶不會重複寫入，沒有變動就不排入', async ($, on) => {
   let n = 5
   const w = world(on, 100_000, 1_000_000, {}, [], () => n)

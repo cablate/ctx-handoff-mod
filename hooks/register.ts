@@ -15,7 +15,7 @@ import type { Notes } from './notes'
 import { encodeProject, isAbs, resolveDots, slash } from './paths'
 import { anchorOf, transcriptOf } from './transcript'
 import type { Row } from './transcript'
-import { DISTILL_EFFORT, DISTILL_EVERY, DISTILL_GRACE_MS, DISTILL_MAX_TOKENS, DISTILL_TIMEOUT_MS, GUARD_MAX_TOKENS, HANDOFF_TIMEOUT_MS, KEEP, DEFER_CAP_EXTRA, DEFER_CAP_RATIO, RELOAD_GRACE_MS, RETRY_MS, RETRY_TURNS, STOPPED, cfg, optionsOf, resetConfig, resolveConfig, settingSource, settingValue, specOf, stepSetting, thresholdOf } from './config'
+import { DISTILL_EFFORT, DISTILL_GRACE_MS, DISTILL_MAX_TOKENS, DISTILL_TIMEOUT_MS, GUARD_MAX_TOKENS, HANDOFF_TIMEOUT_MS, KEEP, DEFER_CAP_EXTRA, DEFER_CAP_RATIO, RELOAD_GRACE_MS, RETRY_MS, RETRY_TURNS, STOPPED, cfg, optionsOf, resetConfig, resolveConfig, settingSource, settingValue, specOf, stepSetting, thresholdOf } from './config'
 import { resetRuntime, rt } from './runtime'
 import { doneCheck, freshWork, noteCall, trackFailure } from './loops'
 import { clearNext, noteStep, peekNext, resolveReplyLang, takePending } from './lang'
@@ -52,7 +52,7 @@ async function reloadConfig($: EngineInterface) {
     await initLang($)
   }
   if (cfg.idleMs !== before.idleMs && rt.idle !== undefined) await schedule($)
-  if (cfg.minTokens !== before.minTokens) await showDistillStatus($)
+  if (cfg.minTokens !== before.minTokens || cfg.distillEvery !== before.distillEvery) await showDistillStatus($)
 }
 
 async function isRefreshOn($: EngineInterface) {
@@ -280,7 +280,7 @@ async function showDistillStatus($: EngineInterface, running?: string) {
   if (rt.deferral) return
   if (!(await isDistillOn($))) return $.ui.status(undefined)
   if (running) return $.ui.status(t().status.running)
-  const left = DISTILL_EVERY - (await sinceDistill($))
+  const left = cfg.distillEvery - (await sinceDistill($))
   if (left > 0) return $.ui.status(t().status.left(left))
   $.ui.status(((await $.session.usage()).context.tokens ?? 0) < cfg.minTokens ? t().status.short : t().status.next)
 }
@@ -604,7 +604,7 @@ async function loadPanelData($: EngineInterface): Promise<PanelData> {
 }
 
 // 設定分頁的列：SETTINGS 的值加上兩個用指令也能切的開關（保持快取、專案筆記，存在 store 的 refresh／distill），依主題排
-const SETTING_ORDER = ['threshold', 'window_ratio', 'refresh', 'idle_minutes', 'max_refresh', 'distill', 'min_tokens', 'notes_model', 'resume_hint', 'retry_nudge', 'done_check', 'reply_language', 'language']
+const SETTING_ORDER = ['threshold', 'window_ratio', 'refresh', 'idle_minutes', 'max_refresh', 'distill', 'distill_every', 'min_tokens', 'notes_model', 'resume_hint', 'retry_nudge', 'done_check', 'reply_language', 'language']
 const STORE_SWITCHES = new Set(['refresh', 'distill'])
 
 async function settingRows($: EngineInterface): Promise<PanelSetting[]> {
@@ -1003,9 +1003,10 @@ export const register: Register = on => {
     const { context } = await $.session.usage()
     // 到門檻的交接由 classic.Stop 判斷；這裡只處理還沒到門檻的整理
     if (context.tokens !== undefined && context.tokens >= thresholdOf(context.window)) return out
-    // 每 DISTILL_EVERY 則使用者訊息，趁快取熱整理一次
-    if ((context.tokens ?? 0) >= cfg.minTokens && !rt.distilling && (await isDistillOn($)) && (await sinceDistill($)) >= DISTILL_EVERY) {
-      $.clock.after(0, () => void distill($, t().distill.why.every(DISTILL_EVERY)))
+    // 每 distill_every 則使用者訊息，趁快取熱整理一次
+    if ((context.tokens ?? 0) >= cfg.minTokens && !rt.distilling && (await isDistillOn($)) && (await sinceDistill($)) >= cfg.distillEvery) {
+      const every = cfg.distillEvery
+      $.clock.after(0, () => void distill($, t().distill.why.every(every)))
     }
     if (!rt.distilling) await showDistillStatus($)
     return out

@@ -13,6 +13,8 @@ type Config = {
   idleMs: number; maxRefresh: number
   // 太小的 context 重建很便宜，不值得刷新、產生離席 handoff 或整理
   minTokens: number
+  // 每幾則使用者訊息在背景整理一次（趁快取熱）
+  distillEvery: number
   // 背景整理用的模型：不帶歷史的單次請求，只送上次整理之後的新對話（最低 Sonnet 5.5）
   notesModel: string
   // 介面語言（狀態列、toast、紀錄、指令回覆、面板）：auto 先看 Claude Code 的 language 設定，沒設就看系統語系
@@ -36,6 +38,7 @@ export const SETTINGS: readonly SettingSpec[] = [
   { key: 'idle_minutes', kind: 'num', min: 5, max: 59, step: 5, d: 55 },
   { key: 'max_refresh', kind: 'num', min: 0, max: 10, step: 1, d: 3 },
   { key: 'min_tokens', kind: 'num', min: 0, max: 500_000, step: 10_000, d: 30_000 },
+  { key: 'distill_every', kind: 'num', min: 5, max: 200, step: 5, d: 30 },
   // free：settings.json 可以寫清單外的模型名稱；面板只在清單裡輪
   { key: 'notes_model', kind: 'choice', options: ['claude-sonnet-5-5', 'claude-opus-5-5'], d: 'claude-sonnet-5-5', free: true },
   { key: 'language', kind: 'choice', options: ['auto', 'zh-TW', 'en'], d: 'auto' },
@@ -68,7 +71,7 @@ export const settingSource = (key: string, panel: Record<string, unknown>, optio
   panel[key] !== undefined ? 'panel' : options[key] !== undefined ? 'file' : 'default'
 
 const CONFIG_DEFAULTS: Config = {
-  threshold: 600_000, windowRatio: 0.8, idleMs: 55 * 60_000, maxRefresh: 3, minTokens: 30_000,
+  threshold: 600_000, windowRatio: 0.8, idleMs: 55 * 60_000, maxRefresh: 3, minTokens: 30_000, distillEvery: 30,
   notesModel: 'claude-sonnet-5-5', language: 'auto', retryNudge: true, doneCheck: true, replyLanguage: 'auto', resumeHint: true,
 }
 // 目前的設定：只改欄位、不換物件，各檔 import 到的是同一份
@@ -85,9 +88,6 @@ export const DISTILL_GRACE_MS = 5_000
 export const DISTILL_EFFORT = 'low'
 export const DISTILL_MAX_TOKENS = 32_000
 export const GUARD_MAX_TOKENS = 4_000
-// 背景整理（閒置刷新、離席、交接前、每 N 則）：把上次整理之後的對話片段和現有經驗交給小模型比對，
-// 輸出新增／更新／刪除／確認，由程式寫回這個工作區的一份 md；之後帶入對話，越用越聰明
-export const DISTILL_EVERY = 30
 // 門檻 handoff 失敗後，至少再 3 則使用者訊息或 10 分鐘才重試
 export const RETRY_TURNS = 3
 export const RETRY_MS = 10 * 60_000
@@ -119,6 +119,7 @@ export function resolveConfig(options: Record<string, unknown>, panel: Record<st
     idleMs: (get('idle_minutes') as number) * 60_000,
     maxRefresh: Math.round(get('max_refresh') as number),
     minTokens: get('min_tokens') as number,
+    distillEvery: Math.round(get('distill_every') as number),
     notesModel: get('notes_model') as string,
     language: get('language') as Config['language'],
     retryNudge: get('retry_nudge') as boolean,

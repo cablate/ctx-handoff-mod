@@ -14,6 +14,7 @@ Notable changes to ctx-handoff. Versions follow the `version` in `.claude-plugin
 
 ### Changed
 
+- **Notes update interval is adjustable:** `distill_every` (default 30, 5–200) sets how many of your messages pass between background notes updates; the status line countdown follows it.
 - **Settings moved to the panel:** a new Settings tab (`/handoff panel`, tab 5) changes every setting, including the cache and notes switches, and shows where each value comes from; a change applies at once here and from the next message in other sessions. The plugin no longer declares `userConfig`, so nothing is listed in `/config` or `/plugin configure`. Values in `pluginConfigs` in `settings.json` still work (for the VS Code extension, which doesn't show the panel); the panel's value wins.
 - Code checks add Biome lint (`biome.json`, run by `tools/check.mjs` and CI through `npx`, no npm dependency).
 - The permissions table names the three environment variables read, and now explains every hook and call that `claude plugin validate` lists.

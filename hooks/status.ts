@@ -2,7 +2,7 @@
 import { t } from './i18n'
 import { INJECT_MIN_COUNT, STALE_DAYS, inProject, memoryTiers } from './notes'
 import type { Notes } from './notes'
-import { DISTILL_EVERY, cfg, thresholdOf } from './config'
+import { cfg, thresholdOf } from './config'
 import { rt } from './runtime'
 import { describeUsage } from './records'
 import type { Away, DistillError, DistillLast, HandoffError, Saved } from './records'
@@ -54,8 +54,8 @@ export function distillStatusText(s: DistillStatusInput) {
   const m = t()
   const ind = m.ind
   return [
-    m.distillStatus.head(on ? 'on' : 'off', DISTILL_EVERY),
-    ...(on ? [`${ind}${m.distillStatus.next(Math.max(0, DISTILL_EVERY - s.since), cfg.idleMs / 60_000)}`] : []),
+    m.distillStatus.head(on ? 'on' : 'off', cfg.distillEvery),
+    ...(on ? [`${ind}${m.distillStatus.next(Math.max(0, cfg.distillEvery - s.since), cfg.idleMs / 60_000)}`] : []),
     `${ind}${d ? m.distillStatus.last(new Date(d.at).toLocaleString(), d.why, d.changes.length) : m.distillStatus.lastNone}`,
     ...(d ? [`${ind}${d.usage}`, ...d.changes.map(c => `${ind}${m.bullet}${c}`)] : []),
     ...(d?.rejected?.count ? [`${ind}${m.distillStatus.rejected(d.rejected.count, d.rejected.samples.join(m.slashList))}`] : []),
