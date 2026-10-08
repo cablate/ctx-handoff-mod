@@ -17,6 +17,7 @@ All notable changes to ctx-handoff. The format follows [Keep a Changelog](https:
 
 ### Fixed
 
+- **Temporary errors no longer push Claude off a working approach:** the repeated-failure nudge now lets Claude wait and retry once when the error looks temporary, such as a timeout or a page still loading, instead of abandoning an approach that was right.
 - **Nothing said just before a handoff is lost from project notes:** if a notes update was already running when the handoff started, the conversation since that update began was never added. The handoff now captures it first and updates the notes right after the running update finishes. The handoff also no longer waits for the notes update before switching.
 - **A new conversation no longer gets an outdated progress note after a handoff:** when the last notes update finished after the switch, the progress it found was dropped, and an older note from another conversation could be offered instead.
 

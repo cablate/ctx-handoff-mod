@@ -32,7 +32,7 @@ const briefOf = (text: string | undefined) => {
 }
 
 export const retryNudgeText = (tool: string, text: string | undefined) =>
-  `${tag} 這個工具（${tool}）連續兩次因同樣原因失敗（${briefOf(text) || '沒有錯誤文字'}）。先找出原因並換一個做法，不要原樣重試。`
+  `${tag} 這個工具（${tool}）連續兩次因同樣原因失敗（${briefOf(text) || '沒有錯誤文字'}）。錯誤看起來是暫時性的（逾時、還在載入、連線中斷）就稍等再試一次；不是的話先找出原因並換一個做法，不要原樣重試。`
 
 // 記下一次工具結果；第 2 次相同簽名的失敗回傳要附給模型的提醒（每段連續失敗只提醒一次）。
 // key：呼叫的範圍＋工具名；成功就清掉這個工具的紀錄

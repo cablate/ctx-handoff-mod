@@ -44,7 +44,7 @@ The next conversation in that folder is told about it once, within 24 hours: "th
 
 Short messages to Claude, never a block on your tools. All on by default.
 
-- **Repeated failure:** when a tool fails twice in a row for the same reason, Claude is told to find the cause and change approach instead of retrying as is.
+- **Repeated failure:** when a tool fails twice in a row for the same reason, Claude is told to find the cause and change approach instead of retrying as is, unless the error looks temporary (a timeout, a page still loading), in which case it waits and tries once more.
 - **"Done" without checking:** when Claude says it's done after editing code this turn with no test, build or check since, it's asked once to verify and show the result, or say what it couldn't verify. Doc edits don't count. Claude Code shows this as "Stop hook feedback" and may label it a Stop hook error; that's the nudge, not a failure.
 - **Reply language:** when Claude's explanation is mostly not in your language (Traditional or Simplified Chinese, English, Japanese), it's reminded once. Code, commands, paths, links and short lines are ignored, so Chinese with English terms is fine. It also fires when you asked for another language on purpose, such as a translation.
 

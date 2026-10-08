@@ -103,6 +103,8 @@ test('重複失敗：第 2 次同樣的失敗在結果後面附提醒，之後�
   expect(r2.context?.[0]).toStartWith('[ctx-handoff] ')
   expect(r2.context?.[0]).toContain(NUDGE)
   expect(r2.context?.[0]).toContain('Bash')
+  // 暫時性錯誤原樣重試本來就對（2026-10-09 截圖工具頁面還在載入，提醒成了誤報）
+  expect(r2.context?.[0]).toContain('暫時性的（逾時、還在載入、連線中斷）就稍等再試一次')
   const r3 = await $.tool.call({ tool: 'Bash', command: 'node a.js' })
   expect(r3.context).toBeUndefined()
 })
