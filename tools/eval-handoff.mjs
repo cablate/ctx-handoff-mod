@@ -184,7 +184,11 @@ function report() {
   const cases = Object.fromEntries(readdirSync(`${DIR}/cases`).map(f => { const c = JSON.parse(readFileSync(`${DIR}/cases/${f}`, 'utf8')); return [c.id, c] }))
   const scored = rs.filter(r => r.verdict.continued && typeof r.verdict.score === 'number')
   const avg = scored.reduce((s, r) => s + r.verdict.score, 0) / (scored.length || 1)
-  const count = (list, key) => list.reduce((m, x) => ({ ...m, [x[key]]: (m[x[key]] ?? 0) + 1 }), {})
+  const count = (list, key) => {
+    const m = {}
+    for (const x of list) m[x[key]] = (m[x[key]] ?? 0) + 1
+    return m
+  }
   const gaps = scored.flatMap(r => r.verdict.gaps ?? [])
   console.log(`## ${label}：${rs.length} 題有結果，${scored.length} 題有接續（其餘轉去做別的）`)
   console.log(`平均 ${avg.toFixed(2)}｜分數分布 ${JSON.stringify(count(scored.map(r => ({ s: r.verdict.score })), 's'))}`)
