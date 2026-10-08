@@ -170,7 +170,7 @@ context 到 600k token（較小的視窗是 80%）時，會等 Claude 做完這�
 | `$.session.messages`、`$.model.complete`、`$.model.fork` | 讀對話來整理筆記、寫交接摘要 |
 | `$.fs.read`、`$.fs.write`、`$.fs.exists` | 讀寫筆記檔與備份；確認專案是不是 git repo |
 | `$.prompt.submit`、`$.command.run` | 把摘要送進新對話；執行 `/clear` |
-| `$.env.get` | 讀 `CLAUDE_CONFIG_DIR`、`HOME`、`USERPROFILE`，只用來找到你的 `~/.claude` 資料夾，不需要另外設定 |
+| `$.env.get` | 讀三個環境變數 `CLAUDE_CONFIG_DIR`、`HOME`、`USERPROFILE`，只用來找到你的 `~/.claude` 資料夾，不需要另外設定 |
 | `$.tool.register` | 給 Claude 一個工具 `mark_in_project`，回報規則或流程放在 repo 的哪裡 |
 | `$.settings.read`、`config.set` | 讀 Claude Code 的 `language` 設定與這個 plugin 的 `pluginConfigs`；你改 Claude Code 的設定時跟著更新 |
 | 其餘：`session.start`、`turn.complete`、`classic.Stop`、`command.run`、`$.command.register`、`ui.render`、`$.store`、`$.state`、`$.clock`、`$.ui`、`$.agent.list`、`$.session.*` | 日常運作：計時、`/handoff` 指令、狀態列、面板與提示、自己的儲存空間、交接前確認 Claude 和子代理都做完了，以及「說完成卻沒驗證」的提醒 |
