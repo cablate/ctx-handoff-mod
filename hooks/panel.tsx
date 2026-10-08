@@ -1,4 +1,4 @@
-// /handoff panel：專案筆記與守門的面板（輸入框上方）。只負責畫面，資料與動作由 register.ts 傳入
+// /handoff panel：專案筆記、守門與設定的面板（輸入框上方）。只負責畫面，資料與動作由 register.ts 傳入
 import type { EngineInterface } from 'claude-code'
 import type { PanelData, PanelTab, PanelUi } from '../types'
 import { t } from './i18n'
@@ -18,6 +18,8 @@ export type PanelActions = {
   ask: (key: string | undefined) => void
   drop: (key: string) => void
   keep: (head: string) => void
+  setting: (key: string, dir: 1 | -1) => void
+  resetSetting: (key: string) => void
   close: () => void
 }
 
@@ -29,6 +31,15 @@ const FRAME_CELLS = 4
 const oneLine = (s: string) => s.replace(/\s+/g, ' ').replace(/^- /, '').trim()
 // 終端機格數：中日韓與全形字算兩格
 const cells = (ch: string) => ((ch.codePointAt(0) ?? 0) >= 0x1100 ? 2 : 1)
+
+// 設定值給人看的樣子：大數字寫成 600k、分鐘加單位、開關寫開／關
+export function showSetting(key: string, v: number | boolean | string) {
+  const m = t().panel
+  if (typeof v === 'boolean') return v ? m.on : m.offValue
+  if (typeof v === 'string') return v
+  if (key === 'idle_minutes') return m.minutes(v)
+  return v >= 1000 ? `${v / 1000}k` : String(v)
+}
 
 export function fit(s: string, width: number) {
   const text = oneLine(s)
@@ -76,6 +87,7 @@ export function panelTree(ui: Elements, v: PanelView, act: PanelActions) {
     { id: 'memory', label: m.tabMemory(v.memoryTotal) },
     { id: 'rules', label: m.tabRules(v.rules.length) },
     { id: 'distill', label: m.tabDistill },
+    { id: 'settings', label: m.tabSettings },
   ]
 
   const guardTab = (
@@ -214,7 +226,42 @@ export function panelTree(ui: Elements, v: PanelView, act: PanelActions) {
     )
     : empty(m.noDistill)
 
-  const body = { guard: guardTab, memory: memoryTab, rules: rulesTab, distill: distillTab }[v.tab]
+  // 設定：名稱、值（auto 附解析結果）、來源；數字用 −／＋，開關與選項按一下換下一個；面板改過的可以還原
+  const settingRow = (s: PanelView['settings'][number]) => {
+    const key = `s:${s.key}`
+    const value = showSetting(s.key, s.value) + (s.shown ? ` → ${s.shown}` : '')
+    return (
+      <Box key={key} flexDirection="column">
+        <Box>
+          <Box flexGrow={1}>
+            <Text>
+              {fit(m.settingName[s.key] ?? s.key, 22)}{' '}
+              <Text color={s.source === 'panel' ? ACCENT : undefined} bold>{value}</Text>{' '}
+              <Text dimColor>{m.source[s.source]}</Text>
+            </Text>
+          </Box>
+          {s.kind === 'num'
+            ? [
+                <Button key={`dec:${s.key}`} label="−" onPress={() => act.setting(s.key, -1)} />,
+                <Button key={`inc:${s.key}`} label="＋" onPress={() => act.setting(s.key, 1)} />,
+              ]
+            : <Button key={`set:${s.key}`} label={m.toggleBtn} onPress={() => act.setting(s.key, 1)} />}
+          {s.source === 'panel' ? <Button key={`reset:${s.key}`} label={m.resetBtn} dimColor onPress={() => act.resetSetting(s.key)} /> : null}
+          {toggle(key)}
+        </Box>
+        {isOpen(key) ? <Box paddingLeft={2}><Text dimColor>{m.settingHelp[s.key] ?? ''}</Text></Box> : null}
+      </Box>
+    )
+  }
+
+  const settingsTab = (
+    <Box flexDirection="column">
+      <Text dimColor>{fit(m.settingsHint, inner)}</Text>
+      {v.settings.map(settingRow)}
+    </Box>
+  )
+
+  const body = { guard: guardTab, memory: memoryTab, rules: rulesTab, distill: distillTab, settings: settingsTab }[v.tab]
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={ACCENT} paddingX={1}>

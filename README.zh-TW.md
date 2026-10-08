@@ -121,7 +121,7 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 
 ### 面板
 
-`/handoff panel` 在輸入框上方開面板，可以核准守門、看最近整理改了什麼、刪掉記錯的筆記（按兩次確認，會先備份）、把封存的記憶留下。ctrl+x tab 後按 1–4 切分頁，再打一次指令關閉。
+`/handoff panel` 在輸入框上方開面板，可以核准守門、看最近整理改了什麼、刪掉記錯的筆記（按兩次確認，會先備份）、把封存的記憶留下、調整設定。ctrl+x tab 後按 1–5 切分頁，再打一次指令關閉。
 
 <img src="docs/panel.png" width="560" alt="輸入框上方的面板，停在規則分頁：上方是守門 4、記憶 52、規則 7、最近整理四個分頁，下面列出各條規則與出現次數，例如宣稱正式站版本前先讀實際部署的版本">
 
@@ -145,7 +145,9 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 
 ## 調整設定
 
-執行 `/plugin configure ctx-handoff@ctx-handoff-mod` 修改，或自己加進 `~/.claude/settings.json`（用 clone 的也是這樣設）。值存在你自己的設定裡，更新 plugin 不會被覆蓋，從下一個 session 開始生效。
+在面板的「設定」分頁調整（`/handoff panel` 後按 5）：數字用 `−`／`＋` 一格一格調，開關與選項按「切換」，「還原」拿掉面板的值。每一列標出值從哪來（面板、settings.json 或預設），按「展開」看說明。改了這個 session 馬上生效，其他 session 在下一則訊息套用。面板的值所有專案共用，更新 plugin 不會被覆蓋。這些設定不放在 `/config`，免得清單越來越長。
+
+看不到面板的地方（VS Code 擴充功能），或想把設定寫在檔案裡，就加進 `~/.claude/settings.json`；面板設過的值優先於檔案：
 
 ```json
 "pluginConfigs": { "ctx-handoff@ctx-handoff-mod": { "options": { "threshold": 400000, "idle_minutes": 50 } } }
@@ -167,7 +169,7 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 | `reply_language` | `auto` | 請 Claude 用你的語言說明：`auto`（跟著 Claude Code 的 `language`）、`off`、`zh-TW`、`zh-CN`、`en` 或 `ja` |
 | `resume_hint` | `true` | 新對話開頭告訴 Claude 這個資料夾上一段對話停在哪（一天內的） |
 
-超出允許範圍的值會被拉回範圍內。保持快取與專案筆記的開關用 `/handoff refresh on|off`、`/handoff distill on|off`。
+超出允許範圍的值會被拉回範圍內。保持快取與專案筆記的開關在面板切換，或用 `/handoff refresh on|off`、`/handoff distill on|off`。
 
 **門檻怎麼選**：一般經驗是模型品質在 200k～300k token 左右開始下滑。預設 600k 是為了少交接幾次；如果你發現交接前模型已經開始變差，就調低它。
 
@@ -201,7 +203,7 @@ context 達到 600k token（視窗較小時是 80%）後，等 Claude 回完這�
 | `$.prompt.submit`、`$.command.run` | 把摘要送進新對話；執行 `/clear` |
 | `$.env.get` | 讀三個環境變數 `CLAUDE_CONFIG_DIR`、`HOME`、`USERPROFILE`，只用來找到你的 `~/.claude` 資料夾，不需要另外設定 |
 | `$.tool.register` | 給 Claude 一個工具 `mark_in_project`，用來回報規則或流程放進 repo 的哪裡 |
-| `$.settings.read`、`$.config.list`、`config.set` | 讀 Claude Code 的 `language` 設定與這個 plugin 自己的設定（`pluginConfigs`）；你改設定時重新讀取 |
+| `$.settings.read`、`config.set` | 讀 Claude Code 的 `language` 設定與這個 plugin 在 `pluginConfigs` 的設定；你改 Claude Code 的設定時跟著更新 |
 | 其餘：`session.start`、`turn.complete`、`classic.Stop`、`command.run`、`$.command.register`、`ui.render`、`$.store`、`$.state`、`$.clock`、`$.ui`、`$.agent.list`、`$.session.*` | 日常運作：計時、`/handoff` 指令、狀態列、面板與提示、自己的儲存空間，交接前確認 Claude 和子代理都做完了，以及 Claude 說完成卻沒跑檢查時請它先驗證一次 |
 
 它自己不發網路請求，也不啟動其他程式（沒有 `$.http` 或 `$.process` 呼叫）。想在不載入它或任何 mod 的情況下開 session，用 `claude --safe-mode` 啟動。另見 [`SECURITY.md`](SECURITY.md)。

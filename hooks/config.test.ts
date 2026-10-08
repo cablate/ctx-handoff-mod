@@ -99,22 +99,20 @@ for (const [language, want] of [['繁體中文', '再 25 則整理筆記'], ['En
   })
 }
 
-// ---------- 使用者設定：/config（plugin.json 的 userConfig），不用改原始碼 ----------
-test('設定：/config 裡的門檻會生效', async ($, on) => {
+// ---------- 使用者設定：面板（store 的 settings）優先，其次 settings.json 的 pluginConfigs ----------
+test('設定：面板存的門檻會生效', async ($, on) => {
   world(on, 100_000, 1_000_000, {}, [], 5)
-  ctl.configValues = { 'ctx-handoff.threshold': 200_000 }
+  ctl.panelSettings = { threshold: 200_000 }
   expect((await cmd($, '')).text).toContain('context 100000 / 門檻 200000')
 })
 
 test('設定：超出範圍的值拉回範圍內（門檻最低 50000）', async ($, on) => {
   world(on, 100_000, 1_000_000, {}, [], 5)
-  ctl.configValues = { 'ctx-handoff.threshold': 10 }
+  ctl.panelSettings = { threshold: 10 }
   expect((await cmd($, '')).text).toContain('context 100000 / 門檻 50000')
 })
 
-// 2026-10-07 實測：clone 載入（--plugin-dir、CLAUDE_CODE_PLUGIN_DIRS）或 claude -p 時，/config 清單沒有本 plugin 的列，
-// 值只在 settings.json 的 pluginConfigs；只讀清單的版本在那裡完全吃不到設定
-test('設定：/config 清單沒有本 plugin 的列時，讀 settings.json 的 pluginConfigs', async ($, on) => {
+test('設定：面板沒設的值讀 settings.json 的 pluginConfigs', async ($, on) => {
   world(on, 100_000, 1_000_000, {}, [], 5)
   ctl.pluginOptions = { threshold: 200_000, idle_minutes: 30 }
   const text = (await cmd($, '')).text
@@ -128,17 +126,18 @@ test('設定：關閉保持快取的訊息照設定的閒置分鐘數', async ($
   expect((await cmd($, 'refresh off')).text).toContain('快取刷新已設為 off（閒置 20 分鐘')
 })
 
-test('設定：使用者在 /config 改語言，介面文字跟著換', async ($, on) => {
+test('設定：別處改了介面語言，下一則訊息起介面文字跟著換', async ($, on) => {
   const w = world(on, 100_000, 1_000_000, {}, [], 5)
   await startSession($)
-  await $.config.set({ key: 'ctx-handoff.language', value: 'en' } as never)
+  ctl.panelSettings = { language: 'en' }
+  await say($, 'hi')
   await endTurn($)
   expect(w.statuses.at(-1)).toBe('25 more messages until notes update')
 })
 
-test('設定：/config 的閒置分鐘數決定多久後保持快取', async ($, on) => {
+test('設定：面板的閒置分鐘數決定多久後保持快取', async ($, on) => {
   const w = world(on, 100_000, 1_000_000, {}, [], 5)
-  ctl.configValues = { 'ctx-handoff.idle_minutes': 10 }
+  ctl.panelSettings = { idle_minutes: 10 }
   await startSession($)
   await endTurn($)
   await w.clock.advance(10 * 60_000)

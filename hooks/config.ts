@@ -1,10 +1,11 @@
-// 使用者設定（userConfig）的型別、預設值、範圍檢查，以及固定參數（純函式，不碰 $；讀設定在 register.ts）
+// 使用者設定的型別、預設值、範圍檢查，以及固定參數（純函式，不碰 $；讀設定在 register.ts）
 import type { Lang } from './i18n'
-import { isReplyLangSetting } from './lang'
+import { REPLY_LANG_SETTINGS } from './lang'
 import type { ReplyLangSetting } from './lang'
 
-// 使用者設定：plugin.json 的 userConfig，值存在使用者自己 settings.json 的 pluginConfigs，更新 plugin 不會覆蓋。
-// 這裡是預設值；第一次用到時讀，使用者在 /config 改了（config.set）再讀。兩個開關（保持快取、專案筆記）仍用指令存在 store
+// 使用者設定：在面板「設定」分頁調整，存在 $.store 的 settings（所有工作區共用）；
+// settings.json 的 pluginConfigs["ctx-handoff@<marketplace>"].options 寫了也讀，面板的值優先。
+// 不宣告 userConfig：/config 一列一個設定會越來越長（維護者 2026-10-08 決定）。第一次用到、送出新訊息、面板改值時重讀
 type Config = {
   // 在場 handoff：context 達 min(threshold, 視窗 × windowRatio) 時產生 handoff → /clear → 送出
   threshold: number; windowRatio: number
@@ -23,11 +24,53 @@ type Config = {
   // 新對話開頭提供上一段對話停在哪（背景整理留下的進度備忘）
   resumeHint: boolean
 }
+
+// 每個設定的型別與範圍：讀值時檢查、面板照它畫列與調整（數字每按一下加減 step，選項依序輪）
+export type SettingSpec =
+  | { key: string; kind: 'num'; min: number; max: number; step: number; d: number }
+  | { key: string; kind: 'bool'; d: boolean }
+  | { key: string; kind: 'choice'; options: readonly string[]; d: string; free?: boolean }
+export const SETTINGS: readonly SettingSpec[] = [
+  { key: 'threshold', kind: 'num', min: 50_000, max: 2_000_000, step: 50_000, d: 600_000 },
+  { key: 'window_ratio', kind: 'num', min: 0.3, max: 0.95, step: 0.05, d: 0.8 },
+  { key: 'idle_minutes', kind: 'num', min: 5, max: 59, step: 5, d: 55 },
+  { key: 'max_refresh', kind: 'num', min: 0, max: 10, step: 1, d: 3 },
+  { key: 'min_tokens', kind: 'num', min: 0, max: 500_000, step: 10_000, d: 30_000 },
+  // free：settings.json 可以寫清單外的模型名稱；面板只在清單裡輪
+  { key: 'notes_model', kind: 'choice', options: ['claude-sonnet-5-5', 'claude-opus-5-5'], d: 'claude-sonnet-5-5', free: true },
+  { key: 'language', kind: 'choice', options: ['auto', 'zh-TW', 'en'], d: 'auto' },
+  { key: 'reply_language', kind: 'choice', options: REPLY_LANG_SETTINGS, d: 'auto' },
+  { key: 'retry_nudge', kind: 'bool', d: true },
+  { key: 'done_check', kind: 'bool', d: true },
+  { key: 'resume_hint', kind: 'bool', d: true },
+]
+export const specOf = (key: string) => SETTINGS.find(s => s.key === key)
+
+// 檢查一個值：超出範圍的拉回範圍內，型別不對或不在選項裡就用預設值
+export function settingValue(spec: SettingSpec, v: unknown): number | boolean | string {
+  if (spec.kind === 'num') return typeof v === 'number' && Number.isFinite(v) ? Math.min(spec.max, Math.max(spec.min, v)) : spec.d
+  if (spec.kind === 'bool') return typeof v === 'boolean' ? v : spec.d
+  if (spec.free) return typeof v === 'string' && v.trim() ? v.trim() : spec.d
+  return typeof v === 'string' && spec.options.includes(v) ? v : spec.d
+}
+
+// 面板按一下的下一個值：數字加減一個 step（去掉浮點誤差），開關反過來，選項往後輪（清單外的值從第一個開始）
+export function stepSetting(spec: SettingSpec, now: unknown, dir: 1 | -1) {
+  const v = settingValue(spec, now)
+  if (spec.kind === 'num') return settingValue(spec, Math.round(((v as number) + dir * spec.step) * 100) / 100)
+  if (spec.kind === 'bool') return !v
+  const i = spec.options.indexOf(v as string)
+  return spec.options[(i + dir + spec.options.length) % spec.options.length] as string
+}
+
+// 值從哪來：面板（store）、settings.json，或都沒設用預設
+export const settingSource = (key: string, panel: Record<string, unknown>, options: Record<string, unknown>) =>
+  panel[key] !== undefined ? 'panel' : options[key] !== undefined ? 'file' : 'default'
+
 const CONFIG_DEFAULTS: Config = {
   threshold: 600_000, windowRatio: 0.8, idleMs: 55 * 60_000, maxRefresh: 3, minTokens: 30_000,
   notesModel: 'claude-sonnet-5-5', language: 'auto', retryNudge: true, doneCheck: true, replyLanguage: 'auto', resumeHint: true,
 }
-export const CONFIG_PREFIX = 'ctx-handoff.'
 // 目前的設定：只改欄位、不換物件，各檔 import 到的是同一份
 export const cfg: Config = { ...CONFIG_DEFAULTS }
 export const resetConfig = () => { Object.assign(cfg, CONFIG_DEFAULTS) }
@@ -63,38 +106,24 @@ export function optionsOf(all: Record<string, { options?: Record<string, unknown
   return (id && all?.[id]?.options) || {}
 }
 
-// 超出範圍的拉回範圍內，型別不對就用預設值。rows 是 /config 清單（有這一列時以它為準），
-// changed：剛改、可能還沒寫進檔案的那一欄
-export function resolveConfig(
-  rows: readonly { key: string; value: unknown }[],
-  options: Record<string, unknown>,
-  changed?: { key: string; value: unknown },
-): Config {
-  const get = (field: string) =>
-    changed?.key === CONFIG_PREFIX + field ? changed.value : rows.find(r => r.key === CONFIG_PREFIX + field)?.value ?? options[field]
-  const num = (field: string, min: number, max: number, d: number) => {
-    const v = get(field)
-    return typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : d
+// 面板存的值優先，其次 settings.json，每個值都照 SETTINGS 檢查
+export function resolveConfig(options: Record<string, unknown>, panel: Record<string, unknown> = {}): Config {
+  const get = (key: string) => {
+    const spec = specOf(key)
+    if (!spec) throw new Error(`unknown setting ${key}`)
+    return settingValue(spec, panel[key] ?? options[key])
   }
-  const bool = (field: string, d: boolean) => {
-    const v = get(field)
-    return typeof v === 'boolean' ? v : d
-  }
-  const d = CONFIG_DEFAULTS
-  const model = get('notes_model')
-  const lang = get('language')
-  const replyLang = get('reply_language')
   return {
-    threshold: num('threshold', 50_000, 2_000_000, d.threshold),
-    windowRatio: num('window_ratio', 0.3, 0.95, d.windowRatio),
-    idleMs: num('idle_minutes', 5, 59, d.idleMs / 60_000) * 60_000,
-    maxRefresh: Math.round(num('max_refresh', 0, 10, d.maxRefresh)),
-    minTokens: num('min_tokens', 0, 500_000, d.minTokens),
-    notesModel: typeof model === 'string' && model.trim() ? model.trim() : d.notesModel,
-    language: lang === 'en' || lang === 'zh-TW' ? lang : 'auto',
-    retryNudge: bool('retry_nudge', d.retryNudge),
-    doneCheck: bool('done_check', d.doneCheck),
-    replyLanguage: isReplyLangSetting(replyLang) ? replyLang : d.replyLanguage,
-    resumeHint: bool('resume_hint', d.resumeHint),
+    threshold: get('threshold') as number,
+    windowRatio: get('window_ratio') as number,
+    idleMs: (get('idle_minutes') as number) * 60_000,
+    maxRefresh: Math.round(get('max_refresh') as number),
+    minTokens: get('min_tokens') as number,
+    notesModel: get('notes_model') as string,
+    language: get('language') as Config['language'],
+    retryNudge: get('retry_nudge') as boolean,
+    doneCheck: get('done_check') as boolean,
+    replyLanguage: get('reply_language') as ReplyLangSetting,
+    resumeHint: get('resume_hint') as boolean,
   }
 }

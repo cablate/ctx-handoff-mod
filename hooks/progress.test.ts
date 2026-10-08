@@ -5,7 +5,7 @@ import { latestProgress, parseActions } from './distill'
 import { parseNotes } from './notes'
 import { agoText, progressOffer } from './progress'
 import type { Progress } from './progress'
-import { DAY, NOTE_TAG, NOTES, actionsReply, cmd, ctl, distillNow, stop, world } from './test-world'
+import { DAY, NOTE_TAG, NOTES, actionsReply, cmd, ctl, distillNow, say, stop, world } from './test-world'
 
 const HOUR = 60 * 60_000
 const PROGRESS = {
@@ -180,11 +180,12 @@ test('設定 resume_hint 關閉：不提供，也不記成已提供', async ($, 
   expect((await cmd($, '')).text).toContain('resume_hint 已關')
 })
 
-test('/config 改 resume_hint：改回開啟就提供', async ($, on) => {
+test('面板改 resume_hint：改回開啟後，下一則訊息起就提供', async ($, on) => {
   world(on, 100_000, 1_000_000, { [KEY]: OLD })
-  ctl.configValues = { 'ctx-handoff.resume_hint': false }
+  ctl.panelSettings = { resume_hint: false }
   expect(await blockOf($)).toBeUndefined()
-  await $.config.set({ key: 'ctx-handoff.resume_hint', value: true } as never)
+  ctl.panelSettings = { resume_hint: true }
+  await say($, '繼續')
   expect(await blockOf($)).toContain('搬資料庫設定')
 })
 

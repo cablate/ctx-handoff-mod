@@ -116,7 +116,7 @@ test('回覆語言：沒有說明文字（只呼叫工具）不判斷', async ($
 
 test('回覆語言：reply_language 設 off 不提醒', async ($, on) => {
   const w = world(on, 1000)
-  ctl.configValues['ctx-handoff.reply_language'] = 'off'
+  ctl.panelSettings.reply_language = 'off'
   await step($, EN, { tools: 1 })
   expect((await toolCall($)).context).toBeUndefined()
   await step($, EN)
@@ -137,7 +137,7 @@ test('回覆語言：設定走 pluginConfigs 也生效；指定語言不看 lang
 
 test('回覆語言：不合法的設定值回到 auto', async ($, on) => {
   world(on, 1000)
-  ctl.configValues['ctx-handoff.reply_language'] = 'klingon'
+  ctl.panelSettings.reply_language = 'klingon'
   await step($, EN, { tools: 1 })
   expect((await toolCall($)).context?.[0]).toContain(REMIND_TW)
 })
@@ -165,14 +165,16 @@ for (const language of [null, '中文', 'Chinese', 'Français']) {
   })
 }
 
-test('回覆語言：使用者在 /config 改設定，目標語言立刻跟著換', async ($, on) => {
+test('回覆語言：設定改了，下一則訊息起目標語言跟著換', async ($, on) => {
   world(on, 1000)
   await step($, TW, { tools: 1 })
   expect((await toolCall($)).context).toBeUndefined()
-  await $.config.set({ key: 'ctx-handoff.reply_language', value: 'ja' } as never)
+  ctl.panelSettings.reply_language = 'ja'
+  await say($, '換成日文')
   await step($, TW, { tools: 1 })
   expect((await toolCall($)).context?.[0]).toContain('日本語')
-  await $.config.set({ key: 'ctx-handoff.reply_language', value: 'off' } as never)
+  ctl.panelSettings.reply_language = 'off'
+  await say($, '關掉')
   await step($, EN, { tools: 1 })
   expect((await toolCall($)).context).toBeUndefined()
 })
@@ -191,10 +193,11 @@ test('回覆語言：和重複失敗提醒並存，兩段都帶上', async ($, o
 test('回覆語言：/handoff 狀態在防呆提醒那行顯示設定與解析結果', async ($, on) => {
   world(on, 1000)
   expect((await cmd($, '')).text).toContain('防呆提醒：重複失敗 on，完成前驗證 on，回覆語言 auto → zh-TW')
-  ctl.configValues['ctx-handoff.reply_language'] = 'ja'
-  await $.config.set({ key: 'ctx-handoff.reply_language', value: 'ja' } as never)
+  ctl.panelSettings.reply_language = 'ja'
+  await say($, '換成日文')
   expect((await cmd($, '')).text).toContain('回覆語言 ja')
-  await $.config.set({ key: 'ctx-handoff.reply_language', value: 'off' } as never)
+  ctl.panelSettings.reply_language = 'off'
+  await say($, '關掉')
   expect((await cmd($, '')).text).toContain('回覆語言 off')
 })
 

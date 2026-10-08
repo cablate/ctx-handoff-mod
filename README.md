@@ -123,7 +123,7 @@ All are on by default; each is a plain message to Claude, never a block on your 
 
 ### Panel
 
-`/handoff panel` opens a panel above the prompt: approve guards, see the latest notes update, delete wrong notes (press twice; backed up first), keep archived memories. Press ctrl+x tab, then 1–4 to switch tabs; run the command again to close it.
+`/handoff panel` opens a panel above the prompt: approve guards, see the latest notes update, delete wrong notes (press twice; backed up first), keep archived memories, change settings. Press ctrl+x tab, then 1–5 to switch tabs; run the command again to close it.
 
 <img src="docs/panel.png" width="560" alt="The panel above the prompt, on the Rules tab: tabs for guards (4), memories (52), rules (7) and the latest update, then rules such as checking the deployed version before announcing a release, each with how many times it came up. Text in Traditional Chinese.">
 
@@ -147,7 +147,9 @@ You won't need these in normal use. If `/handoff` is already taken by your own c
 
 ## Settings
 
-Set them with `/plugin configure ctx-handoff@ctx-handoff-mod`, or add them to `~/.claude/settings.json` yourself (also the way to set them for a clone). They're saved in your own settings, so updates keep them; they apply from the next session.
+Change them on the panel's Settings tab (`/handoff panel`, then tab 5): `−`/`＋` step numbers, Toggle switches or cycles a choice, Reset drops the panel's value. Each row shows where its value comes from (panel, settings.json or default) and "More" explains it. A change applies at once in this session and from the next message in others. Panel values cover all your projects and survive updates. They are not in `/config`, which stays short.
+
+Where the panel isn't shown (the VS Code extension), or to keep settings in a file, add them to `~/.claude/settings.json`; a value set on the panel wins over the file:
 
 ```json
 "pluginConfigs": { "ctx-handoff@ctx-handoff-mod": { "options": { "threshold": 400000, "idle_minutes": 50 } } }
@@ -169,7 +171,7 @@ For a clone, use the key `ctx-handoff@inline` instead.
 | `reply_language` | `auto` | Remind Claude to explain in your language: `auto` (follow Claude Code's `language`), `off`, `zh-TW`, `zh-CN`, `en` or `ja` |
 | `resume_hint` | `true` | Tell a new conversation where the last one in this folder stopped (if within a day) |
 
-Values outside the allowed range are pulled back into it. Cache keeping and project notes are switched with `/handoff refresh on|off` and `/handoff distill on|off`.
+Values outside the allowed range are pulled back into it. Cache keeping and project notes are switched on the panel or with `/handoff refresh on|off` and `/handoff distill on|off`.
 
 **Choosing a threshold:** quality is commonly seen to start slipping around 200k–300k tokens. The 600k default trades that for fewer handoffs; lower it if the model gets worse before the handoff fires.
 
@@ -203,7 +205,7 @@ Values outside the allowed range are pulled back into it. Cache keeping and proj
 | `$.prompt.submit`, `$.command.run` | Sends the summary into the new conversation; runs `/clear` |
 | `$.env.get` | Reads three environment variables, `CLAUDE_CONFIG_DIR`, `HOME` and `USERPROFILE`, only to find your `~/.claude` folder. Nothing needs to be set |
 | `$.tool.register` | Gives Claude one tool, `mark_in_project`, to report where it put a rule or procedure in your repo |
-| `$.settings.read`, `$.config.list`, `config.set` | Reads Claude Code's `language` setting and this plugin's own settings (`pluginConfigs`); rereads them when you change one |
+| `$.settings.read`, `config.set` | Reads Claude Code's `language` setting and this plugin's settings in `pluginConfigs`; notices when you change Claude Code's settings |
 | The rest: `session.start`, `turn.complete`, `classic.Stop`, `command.run`, `$.command.register`, `ui.render`, `$.store`, `$.state`, `$.clock`, `$.ui`, `$.agent.list`, `$.session.*` | Bookkeeping: timers, the `/handoff` command, status line, panel and toasts, its own storage, checking that Claude and its subagents are done before a handoff, and asking Claude once to verify when it says "done" without having run a check |
 
 It makes no network requests of its own and starts no programs (no `$.http` or `$.process` calls). To run a session without it, or any other mod, start Claude Code with `claude --safe-mode`. See also [`SECURITY.md`](SECURITY.md).

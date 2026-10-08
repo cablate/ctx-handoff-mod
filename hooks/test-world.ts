@@ -54,8 +54,8 @@ const fresh = () => ({
   curCwd: 'C:/proj',
   // $.env.get 的回答；world() 重設成 Windows 環境，POSIX 的測試在 world() 之後改它
   envVars: { USERPROFILE: 'C:\\Users\\u' } as Record<string, string>,
-  // /config 裡本 plugin 的欄位（ctx-handoff.<欄位>）；測試開始前可以先放值，模擬使用者設定過
-  configValues: {} as Record<string, unknown>,
+  // 面板存的設定（store 的 settings，還沒被 plugin 寫過時讀這份）；測試開始前或下一則訊息前改，模擬在面板設定過
+  panelSettings: {} as Record<string, unknown>,
   // settings.json 的 pluginConfigs["ctx-handoff@…"].options（clone 載入或 claude -p 時只有這個來源）
   pluginOptions: {} as Record<string, unknown>,
 })
@@ -83,7 +83,9 @@ export const world = (on: On, tokens: number, window = 1_000_000, store: Record<
   on('ui.toast', (_$, e: unknown) => { toasts.push(JSON.stringify(e)); return { value: undefined } })
   // 自己的 store：測試要直接讀寫（$.store 不在測試引擎的 $ 上）；值經過 JSON 來回，和真的一樣
   const kv = new Map<string, unknown>(Object.entries(store))
-  on('store.get', (_$, e: { key: string }) => ({ value: kv.has(e.key) ? JSON.parse(JSON.stringify(kv.get(e.key))) : undefined }))
+  on('store.get', (_$, e: { key: string }) => ({
+    value: kv.has(e.key) ? JSON.parse(JSON.stringify(kv.get(e.key))) : e.key === 'settings' ? { ...ctl.panelSettings } : undefined,
+  }))
   on('store.set', (_$, e: { key: string; value: unknown }) => { kv.set(e.key, JSON.parse(JSON.stringify(e.value))); return { value: undefined } })
   on('store.delete', (_$, e: { key: string }) => { kv.delete(e.key); return { value: undefined } })
   on('store.keys', () => ({ value: [...kv.keys()] }))
@@ -91,8 +93,7 @@ export const world = (on: On, tokens: number, window = 1_000_000, store: Record<
   const put = (key: string, value: unknown) => { kv.set(key, value) }
   on('env.get', (_$, e: { name: string }) => ({ value: ctl.envVars[e.name] }))
   on('settings.read', () => ({ value: { language, pluginConfigs: { 'ctx-handoff@ctx-handoff-mod': { options: ctl.pluginOptions } } } }) as never)
-  on('config.list', () => ({ value: Object.entries(ctl.configValues).map(([key, value]) => ({ key, value, label: key, kind: typeof value === 'boolean' ? 'boolean' : typeof value === 'number' ? 'number' : 'text', provider: { plugin: 'ctx-handoff', tier: 'user' }, isLocked: false })) }) as never)
-  on('config.set', (_$, e: { key: string; value: unknown }) => { ctl.configValues[e.key] = e.value; return { value: e.value } as never })
+  on('config.set', (_$, e: { key: string; value: unknown }) => ({ value: e.value }) as never)
   on('session.id', () => ({ value: ctl.curSid }))
   on('session.turns', () => ({ value: turnsOf() }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { tokens, window }, rateLimits: [] } }))

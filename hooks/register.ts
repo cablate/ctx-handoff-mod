@@ -1,9 +1,9 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
-import type { PanelData, PanelUi } from '../types'
-import { panelTree } from './panel'
+import type { PanelData, PanelSetting, PanelUi } from '../types'
+import { panelTree, showSetting } from './panel'
 import type { PanelActions } from './panel'
-import { pickLang, setLang, t } from './i18n'
+import { getLang, pickLang, setLang, t } from './i18n'
 import type { Lang } from './i18n'
 import { applyActions, distillPrompt, latestProgress, parseActions, squash } from './distill'
 import { progressForPrompt, progressKey, progressOffer, withOffered } from './progress'
@@ -15,7 +15,7 @@ import type { Notes } from './notes'
 import { encodeProject, isAbs, resolveDots, slash } from './paths'
 import { anchorOf, transcriptOf } from './transcript'
 import type { Row } from './transcript'
-import { CONFIG_PREFIX, DISTILL_EFFORT, DISTILL_EVERY, DISTILL_GRACE_MS, DISTILL_MAX_TOKENS, DISTILL_TIMEOUT_MS, GUARD_MAX_TOKENS, HANDOFF_TIMEOUT_MS, KEEP, DEFER_CAP_EXTRA, DEFER_CAP_RATIO, RELOAD_GRACE_MS, RETRY_MS, RETRY_TURNS, STOPPED, cfg, optionsOf, resetConfig, resolveConfig, thresholdOf } from './config'
+import { DISTILL_EFFORT, DISTILL_EVERY, DISTILL_GRACE_MS, DISTILL_MAX_TOKENS, DISTILL_TIMEOUT_MS, GUARD_MAX_TOKENS, HANDOFF_TIMEOUT_MS, KEEP, DEFER_CAP_EXTRA, DEFER_CAP_RATIO, RELOAD_GRACE_MS, RETRY_MS, RETRY_TURNS, SETTINGS, STOPPED, cfg, optionsOf, resetConfig, resolveConfig, settingSource, settingValue, specOf, stepSetting, thresholdOf } from './config'
 import { resetRuntime, rt } from './runtime'
 import { doneCheck, freshWork, noteCall, trackFailure } from './loops'
 import { clearNext, noteStep, peekNext, resolveReplyLang, takePending } from './lang'
@@ -27,17 +27,32 @@ import type { PromoteAsk } from './promote'
 import { backupPath, keepMemory, panelSnapshot, withoutNote } from './panel-data'
 import { distillStatusText, statusText, usageText } from './status'
 
-// 讀本 plugin 的設定：settings.json 的 pluginConfigs["ctx-handoff@<marketplace>"].options（/config 改的也寫在這裡）；
-// /config 清單有這一列時以它為準（實測：clone 載入或 claude -p 時清單沒有本 plugin 的列，settings 讀得到）。
-// changed：剛改、可能還沒寫進檔案的那一欄
-async function loadConfig($: EngineInterface, changed?: { key: string; value: unknown }) {
-  let rows: readonly { key: string; value: unknown }[] = []
-  try { rows = await $.config.list() } catch {}
+// 讀本 plugin 的設定：面板存在 store 的 settings 優先，其次 settings.json 的 pluginConfigs["ctx-handoff@<marketplace>"].options
+async function readSettings($: EngineInterface) {
   let options: Record<string, unknown> = {}
   try {
     options = optionsOf((await $.settings.read()).pluginConfigs as Record<string, { options?: Record<string, unknown> }> | undefined)
   } catch {}
-  Object.assign(cfg, resolveConfig(rows, options, changed))
+  const panel = ((await $.store.get('settings')) as Record<string, unknown> | undefined) ?? {}
+  return { options, panel }
+}
+
+async function loadConfig($: EngineInterface) {
+  const { options, panel } = await readSettings($)
+  Object.assign(cfg, resolveConfig(options, panel))
+}
+
+// 重讀設定（送出新訊息、面板改值）：別的 session 在面板改的值也在這時生效；語言、閒置計時、回覆語言跟著換
+async function reloadConfig($: EngineInterface) {
+  const before = { ...cfg }
+  await loadConfig($)
+  if (cfg.replyLanguage !== before.replyLanguage) rt.replyTarget = undefined
+  if (cfg.language !== before.language) {
+    rt.langReady = undefined
+    await initLang($)
+  }
+  if (cfg.idleMs !== before.idleMs && rt.idle !== undefined) await schedule($)
+  if (cfg.minTokens !== before.minTokens) await showDistillStatus($)
 }
 
 async function isRefreshOn($: EngineInterface) {
@@ -585,7 +600,64 @@ async function loadPanelData($: EngineInterface): Promise<PanelData> {
   const notes = parseNotes(await readText($, file))
   const guards = await loadGuards($)
   const d = (await $.store.get(`distill:last:${await projectKey($)}`)) as DistillLast | undefined
-  return panelSnapshot(file, notes, guards, d, localStamp(await $.clock.now()).slice(0, 10))
+  return panelSnapshot(file, notes, guards, d, localStamp(await $.clock.now()).slice(0, 10), await settingRows($))
+}
+
+// 設定分頁的列：SETTINGS 的值加上兩個用指令也能切的開關（保持快取、專案筆記，存在 store 的 refresh／distill），依主題排
+const SETTING_ORDER = ['threshold', 'window_ratio', 'refresh', 'idle_minutes', 'max_refresh', 'distill', 'min_tokens', 'notes_model', 'resume_hint', 'retry_nudge', 'done_check', 'reply_language', 'language']
+const STORE_SWITCHES = new Set(['refresh', 'distill'])
+
+async function settingRows($: EngineInterface): Promise<PanelSetting[]> {
+  const { options, panel } = await readSettings($)
+  const rows: PanelSetting[] = []
+  for (const key of SETTING_ORDER) {
+    if (STORE_SWITCHES.has(key)) {
+      const stored = await $.store.get(key)
+      rows.push({ key, kind: 'bool', value: stored !== false, source: stored === undefined ? 'default' : 'panel' })
+      continue
+    }
+    const spec = specOf(key)
+    if (!spec) continue
+    const shown = key === 'reply_language' && cfg.replyLanguage === 'auto' ? (await replyTarget($)) ?? 'off'
+      : key === 'language' && cfg.language === 'auto' ? getLang() : undefined
+    rows.push({ key, kind: spec.kind, value: settingValue(spec, panel[key] ?? options[key]), source: settingSource(key, panel, options), ...(shown ? { shown } : {}) })
+  }
+  return rows
+}
+
+// 面板改一個設定：數字加減一格、開關反過來、選項往後輪；存進 store 後馬上重讀（其他 session 在下一則訊息重讀）
+async function changeSetting($: EngineInterface, key: string, dir: 1 | -1) {
+  const name = t().panel.settingName[key] ?? key
+  if (STORE_SWITCHES.has(key)) {
+    const on = (await $.store.get(key)) !== false
+    await $.store.set(key, !on)
+    if (key === 'distill') await showDistillStatus($)
+    return t().panelCmd.settingSet(name, on ? t().panel.offValue : t().panel.on)
+  }
+  const spec = specOf(key)
+  if (!spec) return t().panelCmd.notFound
+  const { options, panel } = await readSettings($)
+  const value = stepSetting(spec, panel[key] ?? options[key], dir)
+  await $.store.set('settings', { ...panel, [key]: value })
+  await reloadConfig($)
+  return t().panelCmd.settingSet(name, showSetting(key, value))
+}
+
+// 還原：拿掉面板存的值，回到 settings.json 或預設
+async function resetSetting($: EngineInterface, key: string) {
+  const name = t().panel.settingName[key] ?? key
+  if (STORE_SWITCHES.has(key)) {
+    await $.store.delete(key)
+    if (key === 'distill') await showDistillStatus($)
+    return t().panelCmd.settingReset(name, t().panel.on)
+  }
+  const spec = specOf(key)
+  if (!spec) return t().panelCmd.notFound
+  const { options, panel } = await readSettings($)
+  const { [key]: _drop, ...rest } = panel
+  await $.store.set('settings', rest)
+  await reloadConfig($)
+  return t().panelCmd.settingReset(name, showSetting(key, settingValue(spec, options[key])))
 }
 
 // 面板開著才重算快照；失敗寫進提示列，不影響呼叫的地方
@@ -721,6 +793,8 @@ function panelActions($: EngineInterface): PanelActions {
     toggle: key => setUi(u => ({ ...u, expanded: u.expanded.includes(key) ? u.expanded.filter(k => k !== key) : [...u.expanded, key] })),
     ask: key => setUi(({ confirming: _c, note: _n, ...u }) => (key ? { ...u, confirming: key } : u)),
     drop: key => run(() => dropNote($, key)),
+    setting: (key, dir) => run(() => changeSetting($, key, dir)),
+    resetSetting: key => run(() => resetSetting($, key)),
     keep: head => run(() => keepNote($, head)),
     close: () => setUi(u => ({ ...u, open: false })),
   }
@@ -843,19 +917,10 @@ export const register: Register = on => {
     return r
   })
 
-  // 使用者在 /config 改了本 plugin 的設定：重讀，語言與閒置計時跟著換（本 plugin 自己的 $.config.set 不會進這裡）
+  // 使用者在 /config 改了 Claude Code 的設定（例如 language）：回覆語言 auto 要重新解析
   on('config.set', async ($, e, next) => {
     const out = await next(e)
     if (out.deny === undefined) rt.replyTarget = undefined
-    if (!e.key.startsWith(CONFIG_PREFIX) || out.deny !== undefined) return out
-    const before = { ...cfg }
-    await loadConfig($, { key: e.key, value: out.value })
-    if (cfg.language !== before.language) {
-      rt.langReady = undefined
-      await initLang($)
-    }
-    if (cfg.idleMs !== before.idleMs && rt.idle !== undefined) await schedule($)
-    if (cfg.minTokens !== before.minTokens) await showDistillStatus($)
     return out
   })
 
@@ -969,6 +1034,7 @@ export const register: Register = on => {
     const isHuman = e.origin.kind === 'composer' || e.origin.kind === 'bridge'
     if (!isHuman) return next(e)
     await initLang($)
+    try { await reloadConfig($) } catch {}
     const isSlash = e.text.trimStart().startsWith('/')
     // 交接進行中：訊息先攔下，建好的文字或交接後一起送進新對話
     const hasAttachments = (e.attachments?.length ?? 0) > 0

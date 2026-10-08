@@ -77,38 +77,6 @@
         "zh-TW"
       ],
       "default": "auto"
-    },
-    "retry_nudge": {
-      "type": "boolean",
-      "title": "Nudge after a repeated failure",
-      "description": "When the same tool call fails twice in a row for the same reason, tell Claude to change approach instead of retrying.",
-      "default": true
-    },
-    "done_check": {
-      "type": "boolean",
-      "title": "Check \"done\" claims",
-      "description": "When Claude says the work is done but edited files and ran no test or check since, ask it once to verify first.",
-      "default": true
-    },
-    "reply_language": {
-      "type": "string",
-      "title": "Reply language reminder",
-      "description": "When Claude's explanation is not in this language, remind it once (with the next tool result, or your next message). auto follows Claude Code's language setting (unset or just \"Chinese\" means off); off turns it off.",
-      "options": [
-        "auto",
-        "off",
-        "zh-TW",
-        "zh-CN",
-        "en",
-        "ja"
-      ],
-      "default": "auto"
-    },
-    "resume_hint": {
-      "type": "boolean",
-      "title": "Offer where the last chat stopped",
-      "description": "A new chat in the same workspace is told where the previous one stopped (task, next step, files), if that was within a day. Needs background notes on.",
-      "default": true
     }
   },
   "types": "./types/index.d.ts"

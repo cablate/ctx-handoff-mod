@@ -1,5 +1,5 @@
 // 面板的資料快照與刪除／保留記憶的筆記變換（純函式，不碰 $；讀寫檔案與 store 在 register.ts）
-import type { PanelData } from '../types'
+import type { PanelData, PanelSetting } from '../types'
 import { guardCandidatesOf } from './guards'
 import type { Guard } from './guards'
 import { EVIDENCE_KEEP, STALE_DAYS, isArchived, memHead, memLines, projectOf } from './notes'
@@ -8,9 +8,10 @@ import type { DistillLast } from './records'
 
 const PANEL_MEMORY = 8
 
-export function panelSnapshot(file: string, notes: Notes, guards: Guard[], d: DistillLast | undefined, today: string): PanelData {
+export function panelSnapshot(file: string, notes: Notes, guards: Guard[], d: DistillLast | undefined, today: string, settings: PanelSetting[] = []): PanelData {
   return {
     file,
+    settings,
     guards,
     candidates: guardCandidatesOf(notes.rules, guards).length,
     ...(d ? { lastDistill: { at: new Date(d.at).toLocaleString(), why: d.why, changes: d.changes } } : {}),

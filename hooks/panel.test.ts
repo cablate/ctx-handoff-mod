@@ -1,6 +1,6 @@
 // 面板：輸入框上方的分頁、守門核准、刪除記憶與規則
 import { expect, test } from 'claude-code/testing'
-import { cmd, NOTES_PATH, pushGuard, BAND_MOUNT, openPanel, PANEL_NOTES, world } from './test-world'
+import { cmd, ctl, NOTES_PATH, pushGuard, BAND_MOUNT, openPanel, PANEL_NOTES, world } from './test-world'
 
 // ---------- 面板 ----------
 
@@ -100,4 +100,47 @@ test('面板：切分頁、展開與重畫只讀快照不讀檔；指令改了�
   await again.press({ key: 'tab:guard' })
   await cmd($, 'guard on 1')
   expect(await again.find({ type: 'Text', text: /啟用.*#1/ })).toBeDefined()
+})
+
+// ---------- 設定分頁：取代 /config 的列 ----------
+
+test('面板設定：數字按＋加一格、開關按切換，存進 store 的 settings 並馬上生效；還原回到 settings.json', async ($, on) => {
+  const w = world(on, 100_000, 1_000_000, {}, [], 5)
+  ctl.pluginOptions = { threshold: 200_000 }
+  w.files.set(NOTES_PATH, PANEL_NOTES)
+  const ui = await openPanel($)
+  await ui.press({ key: 'tab:settings' })
+  expect(await ui.find({ type: 'Text', text: /交接門檻 200k settings\.json/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /回覆語言提醒 auto → zh-TW 預設/ })).toBeDefined()
+  await ui.press({ key: 'inc:threshold' })
+  await w.clock.advance(0)
+  expect(w.get('settings')).toEqual({ threshold: 250_000 })
+  expect((await cmd($, '')).text).toContain('門檻 250000')
+  expect(await ui.find({ type: 'Text', text: /交接門檻 250k 面板/ })).toBeDefined()
+  await ui.press({ key: 'set:retry_nudge' })
+  await w.clock.advance(0)
+  expect(w.get('settings')).toEqual({ threshold: 250_000, retry_nudge: false })
+  expect((await cmd($, '')).text).toContain('重複失敗 off')
+  await ui.press({ key: 'reset:threshold' })
+  await w.clock.advance(0)
+  expect(w.get('settings')).toEqual({ retry_nudge: false })
+  expect((await cmd($, '')).text).toContain('門檻 200000')
+})
+
+test('面板設定：數字不超出範圍，選項依序輪；保持快取與專案筆記的開關和指令共用', async ($, on) => {
+  const w = world(on, 100_000, 1_000_000, {}, [], 5)
+  ctl.panelSettings = { idle_minutes: 55, reply_language: 'ja' }
+  w.files.set(NOTES_PATH, PANEL_NOTES)
+  const ui = await openPanel($)
+  await ui.press({ key: 'tab:settings' })
+  await ui.press({ key: 'inc:idle_minutes' })
+  await w.clock.advance(0)
+  expect((w.get('settings') as Record<string, unknown>).idle_minutes).toBe(59)
+  await ui.press({ key: 'set:reply_language' })
+  await w.clock.advance(0)
+  expect((w.get('settings') as Record<string, unknown>).reply_language).toBe('auto')
+  await ui.press({ key: 'set:refresh' })
+  await w.clock.advance(0)
+  expect(w.get('refresh')).toBe(false)
+  expect((await cmd($, 'refresh')).text).toContain('off')
 })

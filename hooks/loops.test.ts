@@ -138,7 +138,7 @@ test('重複失敗：和守門提醒並存，守門的 deny 不受影響', async
 
 test('重複失敗：retry_nudge 關閉時不提醒', async ($, on) => {
   world(on, 1000)
-  ctl.configValues['ctx-handoff.retry_nudge'] = false
+  ctl.panelSettings.retry_nudge = false
   ctl.toolReply = () => fail('same failure')
   await $.tool.call({ tool: 'Bash', command: 'x' })
   const r = await $.tool.call({ tool: 'Bash', command: 'x' })
@@ -240,13 +240,13 @@ test('完成前驗證：子代理（含背景子代理）的改檔與檢查不�
 
 test('完成前驗證：done_check 關閉時不擋', async ($, on) => {
   world(on, 1000)
-  ctl.configValues['ctx-handoff.done_check'] = false
+  ctl.panelSettings.done_check = false
   await $.tool.call({ tool: 'Edit', file_path: 'a.ts', old_string: 'a', new_string: 'b' })
   expect((await stop($, claim)).block).toBeUndefined()
 })
 
 test('防呆提醒：/handoff 狀態顯示兩個開關', async ($, on) => {
   world(on, 1000)
-  ctl.configValues['ctx-handoff.done_check'] = false
+  ctl.panelSettings.done_check = false
   expect((await cmd($, '')).text).toContain('防呆提醒：重複失敗 on，完成前驗證 off')
 })

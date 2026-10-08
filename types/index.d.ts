@@ -1,5 +1,5 @@
 // ctx-handoff 放在 $.state 的值（session 範圍，熱重載不會清掉）：只有面板用
-export type PanelTab = 'guard' | 'memory' | 'rules' | 'distill'
+export type PanelTab = 'guard' | 'memory' | 'rules' | 'distill' | 'settings'
 
 export type PanelGuard = {
   id: number; rule: string; tool: string; match: string; unless?: string; message: string
@@ -24,6 +24,13 @@ export type PanelData = {
   // project：「已在 <位置>」或「不放」
   rules: { name: string; count: number; project?: string }[]
   procedures: { name: string; count: number; project?: string }[]
+  settings: PanelSetting[]
+}
+
+// 設定分頁的一列：值已檢查過；source 是值從哪來；shown 是 auto 解析出的結果
+export type PanelSetting = {
+  key: string; kind: 'num' | 'bool' | 'choice'; value: number | boolean | string
+  source: 'panel' | 'file' | 'default'; shown?: string
 }
 
 // 面板的操作狀態
