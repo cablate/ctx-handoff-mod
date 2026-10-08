@@ -1,7 +1,7 @@
 // 流程：背景整理學到的多步驟固定做法。存進經驗檔的「## 流程」、不帶入新對話，次數夠多時交給 AI 做成專案的 skill
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { actionsReply, cmd, ctl, distillNow, lastOf, NOTES, NOTES_PATH, openPanel, startSession, world } from './test-world'
+import { actionsReply, cmd, ctl, distillNow, lastOf, NOTES, NOTES_PATH, openPanel, say, startSession, world } from './test-world'
 import { parseNotes, renderNotes } from './notes'
 
 const RELEASE = {
@@ -36,10 +36,8 @@ const withProcedure = (count: number, extraLines: string[] = []) => [
   '',
 ].join('\n')
 
-const PROMOTE_TOOL_NAME = 'mcp__ctx-handoff__mark_in_project'
 const promoteBlockOf = async ($: Engine) =>
   (await $.prompt.context({ blocks: [] })).blocks.find(b => b.name === 'ctxHandoffPromote')?.text
-const mark = ($: Engine, items: unknown[]) => $.tool.call({ tool: PROMOTE_TOOL_NAME, items } as never)
 
 test('流程：解析再輸出逐位元相同；沒有流程的舊檔不多出一段；自訂區段仍保留在後面', () => {
   const text = withProcedure(3, ['- 專案：已在 .claude/skills/release/SKILL.md', '', '## 自訂區段', '原樣保留'])
@@ -177,8 +175,7 @@ test('流程：git repo 裡出現 3 次以上就交代 AI 做成 skill；不到 
   expect(text).toContain('description')
   expect(text).toContain('不要另開重複的')
   expect(text).toContain('不要 commit 或 push')
-  expect(text).toContain(`${PROMOTE_TOOL_NAME}`)
-  expect(text).toContain('流程用 procedure')
+  expect(text).toContain('不用呼叫任何工具回報')
   expect(Object.keys(w.get('promote:C--proj') as object)).toEqual(['p:發版'])
 })
 
@@ -190,10 +187,10 @@ test('流程：沒有流程的交代文字不提 skill', async ($, on) => {
   const text = (await promoteBlockOf($)) ?? ''
   expect(text).toContain('規則三')
   expect(text).not.toContain('SKILL.md')
-  expect(text).toContain('4. 完成後呼叫')
+  expect(text).toContain('4. 完成後在回覆最後')
 })
 
-test('流程：不是 git repo 不交代；交代過的 6 小時內不再交代，最多 2 次', async ($, on) => {
+test('流程：不是 git repo 不交代；交給的對話還在時不重複交代，它結束就再交代', async ($, on) => {
   const w = world(on, 100_000)
   w.files.set(NOTES, withProcedure(3))
   await startSession($)
@@ -201,34 +198,30 @@ test('流程：不是 git repo 不交代；交代過的 6 小時內不再交代�
   w.files.set('C:/proj/.git', '')
   expect(await promoteBlockOf($)).toContain('流程「發版」')
   expect(await promoteBlockOf($)).toBeUndefined()
-  await w.clock.advance(6 * 60 * 60_000)
+  await $.session.end({ reason: 'prompt_input_exit', sessionId: 'S1', resume: { id: 'S1' } })
+  ctl.curSid = 'S2'
   expect(await promoteBlockOf($)).toContain('流程「發版」')
-  await w.clock.advance(6 * 60 * 60_000)
-  expect(await promoteBlockOf($)).toBeUndefined()
 })
 
-test('流程：AI 回報 skill 位置後記「已在」，不再交代；不放就記「不放」；找不到的回報給 AI', async ($, on) => {
-  const w = world(on, 100_000)
+test('流程：整理認出 skill 放好就記「已在」，不再交代；使用者不要就記「不放」', async ($, on) => {
+  const w = world(on, 100_000, 1_000_000, {}, [], 5)
   w.files.set('C:/proj/.git', '')
+  w.files.set('C:/proj/.claude/skills/release/SKILL.md', '---\nname: release\n---')
+  // 備份資料是 P1、發版是 P2
   w.files.set(NOTES, withProcedure(3).replace('## 流程\n', '## 流程\n\n### 備份資料（4 次）\n- 時機：每週\n- 步驟：\n  1. 匯出\n  2. 上傳\n  3. 驗證\n'))
   await startSession($)
   expect(await promoteBlockOf($)).toContain('流程「備份資料」')
-  const r = await mark($, [
-    { procedure: '發版', where: '.claude/skills/release/SKILL.md' },
-    { procedure: '備份資料', declined: true },
-    { procedure: '備份資料2', where: 'x' },
-    { procedure: '發版2' },
-  ])
-  const result = String(r.result)
-  expect(result).toContain('流程「發版」：已在 .claude/skills/release/SKILL.md')
-  expect(result).toContain('流程「備份資料」：不放')
-  expect(result).toContain('流程「備份資料2」：經驗檔裡沒有這條')
-  expect(result).toContain('流程「發版2」：缺少 where')
+  await say($, '備份資料那個流程不用做成 skill')
+  ctl.distillReply = actionsReply(
+    { op: 'in_project', id: 'P2', where: '.claude/skills/release/SKILL.md' },
+    { op: 'not_in_project', id: 'P1', quote: '不用做成 skill' },
+  )
+  await distillNow($)
   const notes = w.files.get(NOTES) ?? ''
   expect(notes).toContain('  3. 建立 GitHub release\n- 根據：1970-01-01 做過兩次\n- 專案：已在 .claude/skills/release/SKILL.md')
   expect(notes).toContain('  3. 驗證\n- 專案：不放')
   expect(w.get('promote:C--proj')).toEqual({})
-  await w.clock.advance(7 * 60 * 60_000)
+  ctl.curSid = 'S2'
   expect(await promoteBlockOf($)).toBeUndefined()
 })
 

@@ -152,7 +152,6 @@ const zh = {
     description: 'ctx-handoff: 狀態；now／dry／distill／resume／continue／resend／refresh on|off／distill on|off',
     taken: (err: string) => `/handoff 已被佔用（${err}），改用 /ctx-handoff`,
     registerFailed: (err: string) => `指令註冊失敗：${err}`,
-    toolFailed: (err: string) => `「放進專案」工具註冊失敗：${err}`,
     resumeFailed: (err: string) => `接回閒置計時失敗：${err}`,
     pruneFailed: (err: string) => `啟動時整理 store 失敗：${err}`,
   },
@@ -238,6 +237,8 @@ const zh = {
     confirmProcedure: (name: string, count: number) => `流程確認：${name} → 出現 ${count} 次`,
     updateProcedure: (name: string) => `更新流程：${name}`,
     deleteProcedure: (name: string) => `刪除流程：${name}`,
+    inProject: (name: string, where: string) => `已放進 repo：${name} → ${where}`,
+    notInProject: (name: string) => `使用者不要放進 repo：${name}`,
   },
 
   // 整理輸出被丟棄的原因（記進樣本，/handoff 看得到）
@@ -246,6 +247,7 @@ const zh = {
     overJoin: '、',
     idNot: (kind: string) => `id 不是 ${kind}#`,
     noId: (id: string) => `沒有編號 ${id}`,
+    whereMissing: (where: string) => `repo 裡沒有 ${where}`,
     badType: (type: string) => `type 無效（${type}）`,
     missing: (names: string) => `缺少 ${names}`,
     quoteNotFound: 'quote 不在使用者訊息裡',
@@ -518,7 +520,6 @@ const en: Messages = {
     description: 'ctx-handoff: status; now / dry / distill / resume / continue / resend / refresh on|off / distill on|off',
     taken: err => `/handoff is already taken (${err}), using /ctx-handoff instead`,
     registerFailed: err => `could not register the command: ${err}`,
-    toolFailed: err => `could not register the move-to-project tool: ${err}`,
     resumeFailed: err => `could not restore the idle timer: ${err}`,
     pruneFailed: err => `could not tidy the store at startup: ${err}`,
   },
@@ -600,6 +601,8 @@ const en: Messages = {
     confirmProcedure: (name, count) => `Procedure confirmed: ${name} → seen ${count} times`,
     updateProcedure: name => `Updated procedure: ${name}`,
     deleteProcedure: name => `Deleted procedure: ${name}`,
+    inProject: (name, where) => `Now in the repo: ${name} → ${where}`,
+    notInProject: name => `Not moving to the repo (you said no): ${name}`,
   },
 
   reject: {
@@ -607,6 +610,7 @@ const en: Messages = {
     overJoin: ', ',
     idNot: kind => `id is not ${kind}#`,
     noId: id => `no such id ${id}`,
+    whereMissing: where => `${where} is not in the repo`,
     badType: type => `invalid type (${type})`,
     missing: names => `missing ${names}`,
     quoteNotFound: 'quote is not in the user\'s messages',

@@ -35,7 +35,6 @@ export const rt = {
   // 上一次整理有沒有失敗（有回答但沒套用也算），給 /handoff distill 判斷
   distillFailed: false,
   // 放進專案的工具完整名稱（mcp__<plugin>__<name>），以註冊結果為準；這個 process 沒註冊就是 undefined
-  promoteTool: undefined as string | undefined,
   // 守門的 store 鍵：工作區在 process 內不變，算一次就記住（熱重載會重算）
   guardsKeyCache: undefined as string | undefined,
   // 設定與介面語言：第一次用到時讀一次就記住（熱重載會重算）
@@ -67,7 +66,6 @@ export function resetRuntime() {
   rt.deferral = undefined
   rt.deferToasted = false
   rt.seenKnown.clear()
-  rt.promoteTool = undefined
   rt.guardsKeyCache = undefined
   rt.langReady = undefined
   rt.streaks.clear()

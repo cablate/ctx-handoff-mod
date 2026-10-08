@@ -32,7 +32,7 @@ context 到 600k token（較小的視窗是 80%）時，會等 Claude 做完這�
 
 筆記在每 30 則你的訊息、閒置 55 分鐘、交接前，或打 `/handoff distill` 時更新。只送上次之後新增的對話給 Sonnet 5.5（effort low），短的一次約 1,200 token；不到 30k token 的對話不整理；看起來像金鑰或密碼的內容會被丟掉。狀態列會倒數（「再 18 則整理筆記」）。
 
-**出現 3 次就放進 repo。** 規則出現 3 次（或守門已啟用）時，下一段在 git repo 開的對話會請 Claude 在做完你交代的事之後，把它放進專案放規則的地方：CLAUDE.md、AGENTS.md 或現有的 hook。流程出現 3 次則做成專案 skill：`.claude/skills/<名稱>/SKILL.md`。Claude 會檢查有沒有重複、不 commit，並用一句話告訴你加了什麼、放在哪，你照平常看 diff 就看得到。之後由 repo 保存，換機器、換工具都有效，ctx-handoff 不再帶入自己那份。你說不要就會復原，之後不再提。
+**出現 3 次就放進 repo。** 規則出現 3 次（或守門已啟用）時，下一段在 git repo 開的對話會請 Claude 在做完你交代的事之後，把它放進專案放規則的地方：CLAUDE.md、AGENTS.md 或現有的 hook。流程出現 3 次則做成專案 skill：`.claude/skills/<名稱>/SKILL.md`。Claude 會檢查有沒有重複、不 commit，並用一句話告訴你加了什麼、放在哪，你照平常看 diff 就看得到。Claude 不用另外回報：下一次整理會從對話看出放在哪，並確認檔案存在；那段對話結束前沒做完，之後的對話會再被請一次。之後由 repo 保存，換機器、換工具都有效，ctx-handoff 不再帶入自己那份。你說不要就會復原，之後不再提。
 
 ### 告訴新對話停在哪
 
@@ -132,12 +132,11 @@ context 到 600k token（較小的視窗是 80%）時，會等 Claude 做完這�
 | `turn.step` | 讀主對話裡 Claude 回覆的可見文字，判斷語言；不改請求、模型或回覆 |
 | `prompt.submit`、`prompt.context` | 交接時攔下你的訊息；把筆記與進度帶入新對話；重讀設定 |
 | `$.session.messages`、`$.model.complete`、`$.model.fork` | 讀對話來整理筆記、寫交接摘要 |
-| `$.fs.read`、`$.fs.write`、`$.fs.exists` | 讀寫筆記檔與備份；確認專案是不是 git repo |
+| `$.fs.read`、`$.fs.write`、`$.fs.exists` | 讀寫筆記檔與備份；確認專案是不是 git repo、規則放進的檔案是否存在 |
 | `$.prompt.submit`、`$.command.run` | 把摘要送進新對話；執行 `/clear` |
 | `$.env.get` | 讀三個環境變數 `CLAUDE_CONFIG_DIR`、`HOME`、`USERPROFILE`，只用來找到你的 `~/.claude` 資料夾，不需要另外設定 |
-| `$.tool.register` | 給 Claude 一個工具 `mark_in_project`，回報規則或流程放在 repo 的哪裡 |
 | `$.settings.read`、`config.set` | 讀 Claude Code 的 `language` 設定與這個 plugin 的 `pluginConfigs`；你改 Claude Code 的設定時跟著更新 |
-| 其餘：`session.start`、`turn.complete`、`classic.Stop`、`command.run`、`$.command.register`、`ui.render`、`$.store`、`$.state`、`$.clock`、`$.ui`、`$.agent.list`、`$.session.*` | 日常運作：計時、`/handoff` 指令、狀態列、面板與提示、自己的儲存空間、交接前確認 Claude 和子代理都做完了，以及「說完成卻沒驗證」的提醒 |
+| 其餘：`session.start`、`session.end`、`turn.complete`、`classic.Stop`、`command.run`、`$.command.register`、`ui.render`、`$.store`、`$.state`、`$.clock`、`$.ui`、`$.agent.list`、`$.session.*` | 日常運作：計時、`/handoff` 指令、狀態列、面板與提示、自己的儲存空間、交接前確認 Claude 和子代理都做完了，以及「說完成卻沒驗證」的提醒 |
 
 它不自己連網、不啟動任何程式（沒有 `$.http` 或 `$.process` 呼叫）。想在不載入任何 mod 的狀態下工作，用 `claude --safe-mode` 啟動。另見 [`SECURITY.md`](../SECURITY.md)。
 

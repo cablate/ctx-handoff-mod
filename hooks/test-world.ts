@@ -159,6 +159,7 @@ export const world = (on: On, tokens: number, window = 1_000_000, store: Record<
     return ctl.takenCommands.has(e.name) ? { deny: `"/${e.name}" refused: it is the user's /${e.name}` } : { value: { command: e.name } }
   })
   on('session.start', (_$, e: { cwd: string }) => ({ cwd: e.cwd }))
+  on('session.end', (_$, e: { sessionId: string }) => ({ sessionId: e.sessionId }))
   on('tool.register', (_$, e: { name: string }) => ({ value: { tool: `mcp__ctx-handoff__${e.name}` } }) as never)
   on('prompt.context', (_$, e) => ({ blocks: [...e.blocks] }))
   on('command.run', async (_$, e: { command: string }) => {

@@ -2,7 +2,7 @@
 import { t } from './i18n'
 import { PROGRESS_FIELD_MAX, PROGRESS_FILES_MAX, PROGRESS_FILE_MAX, PROGRESS_TASK_MAX, PROGRESS_TOTAL_MAX, isProgressState, progressSize } from './progress'
 import type { ProgressFields } from './progress'
-import { EVIDENCE_KEEP, NOTE_TAG, STALE_DAYS, inProject, isArchived, memHead, memOneLine, procBody, procOneLine, procRest, procSteps, procWhen, projectOf, ruleText, tag } from './notes'
+import { EVIDENCE_KEEP, NOTE_TAG, PROJECT_DECLINED, PROJECT_IN, STALE_DAYS, inProject, isArchived, memHead, memOneLine, procBody, procOneLine, procRest, procSteps, procWhen, projectOf, ruleText, setProject, tag } from './notes'
 import type { Change, Memory, Notes, Procedure, Rule } from './notes'
 
 // 記憶給人看：標題是一句結論，做法／理由各一句；根據給整理模型判斷用，不帶入新對話
@@ -17,12 +17,15 @@ const PROC_NAME_MAX = 40
 const STEP_MIN = 2
 const STEP_MAX_COUNT = 8
 const STEP_MAX = 80
+// 放進 repo 的位置（repo 裡的路徑）
+const WHERE_MAX = 200
 // 這兩類講的是使用者說過的話：一定要附對話裡找得到的原話
 const QUOTE_TYPES = ['user', 'feedback']
 
 // 整理提示：這個工作區現有的記憶與規則（編號只在這次有效）
 // progress：目前存著的進度（已轉成一行文字），讓模型接著更新而不是從片段猜
-export function distillPrompt(anchor: string | undefined, notes: Notes, day: string, progress = '（無）') {
+// pending：還沒放進 repo 的規則、流程與守門（編號 R／P 同上面的清單，守門是 G＋守門編號）
+export function distillPrompt(anchor: string | undefined, notes: Notes, day: string, progress = '（無）', pending: { id: string; name: string }[] = []) {
   const mem = notes.memory.length
     ? notes.memory.map((m, i) => `M${i + 1} ${memOneLine(m)}${isArchived(m, day) ? `（已封存：超過 ${STALE_DAYS} 天沒被證實）` : ''}`)
     : ['（無）']
@@ -74,6 +77,11 @@ export function distillPrompt(anchor: string | undefined, notes: Notes, day: str
     '要很保守：只收同一種工作在這段對話裡被做了不只一次、或使用者明說「以後都照這個流程」，而且至少有 3 個步驟的固定做法。單一規則、偏好、一次性的任務、只是同一種工具呼叫重複，都不是流程（規則寫成規則，偏好寫成記憶）。',
     '和現有流程比對：同一種流程在這段對話又被做了一次，用 confirm_procedure 增加出現次數，不要新增；步驟有變才 update_procedure；不要寫出換句話說的重複流程。',
     '',
+    '五、放進 repo：下面這些已被證實多次，程式會交代 AI 把它們寫進這個 repo（AGENTS.md、CLAUDE.md、.claude/skills、hook 等）。',
+    ...(pending.length ? pending.map(p => `${p.id} ${p.name}`) : ['（無）']),
+    '- 附上的對話裡，AI 實際把其中一條寫進 repo 的檔案（看得到改檔的工具呼叫），或 AI、使用者明確說它已經在 repo 的某個檔案，就輸出 in_project，where 寫那個檔案在 repo 裡的路徑；程式會確認檔案存在。只憑推測、或只說要放還沒放，都不要輸出。',
+    '- 使用者明確說不要放進 repo，輸出 not_in_project，quote 照抄使用者原話。',
+    '',
     '輸出格式（照抄標記；一行一個 JSON 物件，不要其他文字；沒有變動就留空）：',
     ACTIONS_START,
     '{"op":"add_memory","type":"feedback","title":"…","how":"…","why":"…","evidence":"…","quote":"…"}',
@@ -89,6 +97,8 @@ export function distillPrompt(anchor: string | undefined, notes: Notes, day: str
     '{"op":"confirm_procedure","id":"P1","evidence":"…"}',
     '{"op":"update_procedure","id":"P1","when":"…可省略","steps":["…","…","…"]}',
     '{"op":"delete_procedure","id":"P3","reason":"…"}',
+    '{"op":"in_project","id":"R2","where":"CLAUDE.md"}',
+    '{"op":"not_in_project","id":"G1","quote":"…"}',
     ACTIONS_END,
     'type 只能是 user、feedback、project、reference。',
     '每行必須是合法 JSON：字串裡的雙引號寫成 \\"，不要換行。',
@@ -103,7 +113,7 @@ const MEMORY_TYPES = ['user', 'feedback', 'project', 'reference']
 export type Rejected = { count: number; samples: string[] }
 // i：原本清單裡的索引（編號只在這次整理有效，不隨刪除位移）
 type MemoryFields = { type: string; title: string; how?: string; why?: string; evidence?: string; quote?: string }
-type Action =
+export type Action =
   | ({ op: 'add_memory'; evidence: string } & MemoryFields)
   | ({ op: 'update_memory'; i: number } & MemoryFields)
   | { op: 'confirm_memory'; i: number; evidence: string; quote?: string }
@@ -117,7 +127,9 @@ type Action =
   | { op: 'confirm_procedure'; i: number; evidence: string }
   | { op: 'update_procedure'; i: number; when?: string; steps?: string[] }
   | { op: 'delete_procedure'; i: number }
-
+  // id：R／P＋清單編號、G＋守門編號；where 由 register.ts 確認檔案存在
+  | { op: 'in_project'; id: string; where: string }
+  | { op: 'not_in_project'; id: string; quote: string }
 
 // 非空字串：換行與連續空白收成一個空格，避免一個欄位寫出多行、破壞 md 結構
 export const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.replace(/\s+/g, ' ').trim() : undefined)
@@ -136,8 +148,8 @@ const tooLong = (fields: Record<string, [string | undefined, number]>) => {
 }
 
 // 一行 JSON 轉成動作；無效時回傳原因（記進丟棄樣本，事後查得出是哪一種）
-// userText：這段對話使用者自己送出的訊息（去掉空白），比對 quote 用
-function toAction(o: Record<string, unknown>, notes: Notes, userText: string): Action | string {
+// userText：這段對話使用者自己送出的訊息（去掉空白），比對 quote 用；pending：可以標成放進 repo 的編號
+function toAction(o: Record<string, unknown>, notes: Notes, userText: string, pending: ReadonlySet<string>): Action | string {
   const ref = (kind: 'M' | 'R' | 'P') => {
     const m = typeof o.id === 'string' ? /^([MRP])(\d+)$/.exec(o.id) : null
     if (!m || m[1] !== kind) return t().reject.idNot(kind)
@@ -262,6 +274,19 @@ function toAction(o: Record<string, unknown>, notes: Notes, userText: string): A
       if (typeof r === 'string') return r
       return missing({ reason: str(o.reason) }) ?? { op: 'delete_procedure', ...r }
     }
+    case 'in_project':
+    case 'not_in_project': {
+      const id = str(o.id)
+      if (!id || !pending.has(id)) return t().reject.noId(String(o.id))
+      if (o.op === 'in_project') {
+        const where = str(o.where)
+        return missing({ where }) ?? tooLong({ where: [where, WHERE_MAX] }) ?? { op: 'in_project', id, where: where! }
+      }
+      const quote = str(o.quote)
+      const bad = missing({ quote }) ?? tooLong({ quote: [quote, QUOTE_MAX] })
+      if (bad) return bad
+      return isQuoted(quote!, userText) ? { op: 'not_in_project', id, quote: quote! } : t().reject.quoteNotFound
+    }
     default:
       return t().reject.badOp(String(o.op))
   }
@@ -280,7 +305,8 @@ const sampleOf = (why: string, line: string) =>
 
 // 只解析兩個標記之間的行，一行一個 JSON；無效的行丟棄並記數與最多 3 個樣本（含原因）。
 // 疑似金鑰的行整行丟棄，樣本不記內容（樣本會寫進 store）
-export function parseActions(text: string, notes: Notes, userText = ''): { actions: Action[]; rejected: Rejected } {
+export function parseActions(text: string, notes: Notes, userText = '', pending: readonly string[] = []): { actions: Action[]; rejected: Rejected } {
+  const pendingIds = new Set(pending)
   const actions: Action[] = []
   const rejected: Rejected = { count: 0, samples: [] }
   // secret：解析後的值疑似金鑰。值可能是跳脫寫法（\u0073k-…），原始行比對不到，所以不能只靠再比對一次
@@ -304,12 +330,24 @@ export function parseActions(text: string, notes: Notes, userText = ''): { actio
     if (!o || typeof o !== 'object' || Array.isArray(o)) { reject(t().reject.notObject, line); continue }
     const rec = o as Record<string, unknown>
     if (hasSecret(rec)) { reject(t().reject.secret, '', true); continue }
-    const a = toAction(rec, notes, userText)
+    const a = toAction(rec, notes, userText, pendingIds)
     if (typeof a === 'string') reject(a, line)
     else actions.push(a)
   }
   return { actions, rejected }
 }
+
+// 程式另外檢查不合格的動作（例如 repo 裡沒有 where 那個檔案）：記進丟棄數與樣本
+export function addRejected(rejected: Rejected, why: string, line: string) {
+  rejected.count += 1
+  if (rejected.samples.length < 3) rejected.samples.push(sampleOf(why, line))
+}
+
+// 守門的放進 repo 動作：守門存在 store、不在經驗檔，由 register.ts 套用
+export const guardPromotions = (actions: Action[]) => actions.flatMap(a =>
+  (a.op === 'in_project' || a.op === 'not_in_project') && /^G\d+$/.test(a.id)
+    ? [{ id: Number(a.id.slice(1)), where: a.op === 'in_project' ? a.where : undefined }]
+    : [])
 
 // 這批動作裡最後一個有效的 set_progress（進度不屬於經驗檔，不經過 applyActions）
 export function latestProgress(actions: Action[]): ProgressFields | undefined {
@@ -429,6 +467,18 @@ export function applyActions(actions: Action[], n: Notes, day: string, sid = '')
       case 'delete_procedure': {
         const p = procedures[a.i]
         if (p) { changes.push(t().change.deleteProcedure(p.name)); procedures[a.i] = undefined }
+        break
+      }
+      // 守門（G）存在 store，由 register.ts 用 guardPromotions 套用
+      case 'in_project':
+      case 'not_in_project': {
+        const m = /^([RP])(\d+)$/.exec(a.id)
+        if (!m) break
+        const i = Number(m[2]) - 1
+        const item = m[1] === 'R' ? rules[i] : procedures[i]
+        if (!item) break
+        setProject(item, a.op === 'in_project' ? `${PROJECT_IN}${a.where}` : PROJECT_DECLINED)
+        changes.push(a.op === 'in_project' ? t().change.inProject(item.name, a.where) : t().change.notInProject(item.name))
         break
       }
     }

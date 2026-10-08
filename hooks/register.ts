@@ -5,12 +5,13 @@ import { panelTree, showSetting } from './panel'
 import type { PanelActions } from './panel'
 import { getLang, pickLang, setLang, t } from './i18n'
 import type { Lang } from './i18n'
-import { applyActions, distillPrompt, latestProgress, parseActions, squash } from './distill'
+import { addRejected, applyActions, distillPrompt, guardPromotions, latestProgress, parseActions, squash } from './distill'
+import type { Action, Rejected } from './distill'
 import { progressForPrompt, progressKey, progressOffer, withOffered } from './progress'
 import type { Progress, ProgressFields } from './progress'
 import { GUARD_MIN_COUNT, applyGuardChange, guardCandidatesOf, guardChangeOf, guardHits, guardListText, guardPrompt, guardSummaryText, inputText, parseGuards, withProposals } from './guards'
 import type { Guard, GuardMode } from './guards'
-import { NOTE_TAG, contextText, localStamp, memHead, noteBlock, parseNotes, renderNotes, tag } from './notes'
+import { NOTE_TAG, PROJECT_DECLINED, PROJECT_IN, contextText, localStamp, memHead, noteBlock, parseNotes, renderNotes, tag } from './notes'
 import type { Notes } from './notes'
 import { encodeProject, isAbs, resolveDots, slash } from './paths'
 import { anchorOf, transcriptOf } from './transcript'
@@ -22,7 +23,7 @@ import { clearNext, noteStep, peekNext, resolveReplyLang, takePending } from './
 import { awayKey, describeUsage, pendingKey, pruneSeen } from './records'
 import type { Away, DistillError, DistillLast, HandoffError, Kind, Saved, Usage } from './records'
 import { HANDOFF_PROMPT, forkFailure, heldBlock } from './handoff'
-import { PROMOTE_DESCRIPTION, PROMOTE_SCHEMA, PROMOTE_TOOL, applyInProject, markAsked, promoteItems, promoteReport, promoteText } from './promote'
+import { markAsked, promoteCandidates, promoteItems, promoteText, releaseAsked } from './promote'
 import type { PromoteAsk } from './promote'
 import { backupPath, keepMemory, panelSnapshot, withoutNote } from './panel-data'
 import { distillStatusText, statusText, usageText } from './status'
@@ -240,13 +241,15 @@ async function distill($: EngineInterface, why: string, queue = true, snap?: Dis
     const file = await notesFile($)
     const original = await readText($, file)
     const notes = parseNotes(original)
+    // 還沒放進 repo 的規則、流程與守門：整理從對話認出放好了就記上
+    const candidates = promoteCandidates(await loadGuards($), notes)
     const started = await $.clock.now()
     const r = await $.model.complete({
       model: cfg.notesModel,
       effort: DISTILL_EFFORT,
       maxTokens: DISTILL_MAX_TOKENS,
       timeoutMs: DISTILL_TIMEOUT_MS,
-      system: distillPrompt(transcript.found ? prev?.anchor : undefined, notes, localStamp(started).slice(0, 10), progressForPrompt(await loadProgress($), started)),
+      system: distillPrompt(transcript.found ? prev?.anchor : undefined, notes, localStamp(started).slice(0, 10), progressForPrompt(await loadProgress($), started), candidates),
       prompt: `=== 對話紀錄 ===\n${transcript.text || '（沒有新的對話內容）'}\n=== 對話紀錄結束 ===\n\n依系統指示輸出 ACTIONS。`,
     })
     if (!r.isAnswered) {
@@ -257,7 +260,9 @@ async function distill($: EngineInterface, why: string, queue = true, snap?: Dis
     }
     const now = await $.clock.now()
     const stamp = localStamp(now)
-    const { actions, rejected } = parseActions(r.text, notes, userText)
+    const parsed = parseActions(r.text, notes, userText, candidates.map(c => c.id))
+    const rejected = parsed.rejected
+    const actions = await checkPromotions($, parsed.actions, rejected)
     // 整理期間經驗檔被改過：編號對不上，這次不寫也不推進進度，下次重新整理同一段
     if ((await readText($, file)) !== original) {
       const reason = t().distill.edited(file)
@@ -266,8 +271,9 @@ async function distill($: EngineInterface, why: string, queue = true, snap?: Dis
       rt.distillFailed = true
       return r
     }
-    const { notes: updated, changes } = applyActions(actions, notes, stamp.slice(0, 10), sid)
-    if (changes.length > 0) await $.fs.write(file, renderNotes(updated, stamp))
+    const { notes: updated, changes: noteChanges } = applyActions(actions, notes, stamp.slice(0, 10), sid)
+    if (noteChanges.length > 0) await $.fs.write(file, renderNotes(updated, stamp))
+    const changes = [...noteChanges, ...await applyPromotions($, actions, candidates, sid, started)]
     // 進度備忘（沒有實際進展時模型不輸出，前一份保留）
     const progress = latestProgress(actions)
     if (progress) await saveProgress($, sid, progress, now)
@@ -762,32 +768,64 @@ async function progressBlock($: EngineInterface) {
 const promoteKey = async ($: EngineInterface) => `promote:${await projectKey($)}`
 const loadAsked = async ($: EngineInterface) => ((await $.store.get(await promoteKey($))) as Record<string, PromoteAsk> | undefined) ?? {}
 
-// 這段對話開頭要交代的：session 啟動資料夾是 git repo 才交代
+// 這段對話開頭要交代的：session 啟動資料夾是 git repo 才交代；交給別段對話還沒收回的不交代
 async function promoteBlock($: EngineInterface, notes: Notes) {
-  if (rt.promoteTool === undefined) return undefined
   const root = slash(await $.session.root())
   if (!(await $.fs.exists(`${root}/.git`))) return undefined
   const asked = await loadAsked($)
-  const now = await $.clock.now()
-  const items = promoteItems(await loadGuards($), notes, asked, now)
+  const items = promoteItems(await loadGuards($), notes, asked)
   if (items.length === 0) return undefined
-  markAsked(asked, items, now)
+  markAsked(asked, items, await $.session.id(), await $.clock.now())
   await $.store.set(await promoteKey($), asked)
-  return promoteText(items, rt.promoteTool)
+  return promoteText(items)
 }
 
-// AI 回報放進 repo 的結果：記進經驗檔與守門，回給 AI 一段結果
-async function markInProject($: EngineInterface, raw: unknown) {
-  const file = await notesFile($)
-  const notes = parseNotes(await readText($, file))
-  const guards = await loadGuards($)
+// 收回交給這段對話的項目（before：只收回這個時間之前交代的），下一段新對話再交代
+async function releasePromote($: EngineInterface, sid: string, before?: number) {
   const asked = await loadAsked($)
-  const { done, failed, notesChanged, guardsChanged } = applyInProject(raw, notes, guards, asked)
-  if (notesChanged) await $.fs.write(file, renderNotes(notes, localStamp(await $.clock.now())))
-  if (guardsChanged) await $.store.set(await guardsKey($), guards)
-  if (notesChanged || guardsChanged) await $.store.set(await promoteKey($), asked)
-  await refreshPanel($)
-  return promoteReport(done, failed)
+  if (releaseAsked(asked, sid, before)) await $.store.set(await promoteKey($), asked)
+}
+
+// 整理說放進 repo 的位置要真的存在：相對路徑以 session 啟動資料夾為準，絕對路徑在它底下就改成相對路徑；
+// 不存在的丟掉並記進丟棄樣本
+async function checkPromotions($: EngineInterface, actions: Action[], rejected: Rejected) {
+  const root = slash(await $.session.root())
+  const out: Action[] = []
+  for (const a of actions) {
+    if (a.op !== 'in_project') { out.push(a); continue }
+    const p = slash(a.where).replace(/^\.\//, '')
+    const abs = isAbs(p) ? p : `${root}/${p}`
+    if (!(await $.fs.exists(abs))) { addRejected(rejected, t().reject.whereMissing(a.where), JSON.stringify(a)); continue }
+    out.push({ ...a, where: abs.toLowerCase().startsWith(`${root.toLowerCase()}/`) ? abs.slice(root.length + 1) : p })
+  }
+  return out
+}
+
+// 整理認出的放進 repo：守門記 project（放進 repo 的停用 ctx-handoff 自己這份），收回對應的交代紀錄；
+// 這段對話在整理開始前交代的其他項目也收回（整理看過了，卻沒看到放好），下一段新對話再交代
+async function applyPromotions($: EngineInterface, actions: Action[], candidates: { id: string; key: string; name: string }[], sid: string, started: number) {
+  const changes: string[] = []
+  const promos = guardPromotions(actions)
+  if (promos.length > 0) {
+    const guards = await loadGuards($)
+    for (const p of promos) {
+      const g = guards.find(x => x.id === p.id)
+      if (!g) continue
+      g.project = p.where === undefined ? PROJECT_DECLINED : `${PROJECT_IN}${p.where}`
+      if (p.where !== undefined) g.state = 'off'
+      changes.push(p.where === undefined ? t().change.notInProject(g.rule) : t().change.inProject(g.rule, p.where))
+    }
+    await $.store.set(await guardsKey($), guards)
+  }
+  const asked = await loadAsked($)
+  const keyOf = new Map(candidates.map(c => [c.id, c.key]))
+  let changed = releaseAsked(asked, sid, started)
+  for (const a of actions) {
+    const key = (a.op === 'in_project' || a.op === 'not_in_project') ? keyOf.get(a.id) : undefined
+    if (key !== undefined && asked[key] !== undefined) { delete asked[key]; changed = true }
+  }
+  if (changed) await $.store.set(await promoteKey($), asked)
+  return changes
 }
 
 function panelActions($: EngineInterface): PanelActions {
@@ -906,13 +944,6 @@ export const register: Register = on => {
         $.ui.log(t().start.registerFailed(String(err2)))
       }
     }
-    // 每次都註冊同一份定義：熱重載或重開 session（resume）時沒註冊，引擎會把工具撤掉（not_configured），
-    // 工具清單反而變了，AI 也沒得回報。延後載入的 MCP 工具中途加入只多一筆可用提示，不動快取前綴
-    try {
-      rt.promoteTool = (await $.tool.register({ name: PROMOTE_TOOL, description: PROMOTE_DESCRIPTION, inputSchema: PROMOTE_SCHEMA })).tool
-    } catch (err) {
-      $.ui.log(t().start.toolFailed(String(err)))
-    }
     try {
       await showDistillStatus($)
     } catch {}
@@ -927,6 +958,14 @@ export const register: Register = on => {
     } catch (err) {
       $.ui.log(t().start.pruneFailed(String(err)))
     }
+    return next(e)
+  })
+
+  // 對話結束（退出、/clear、resume、訊號）：交給它的放進專案收回，下一段新對話再交代
+  on('session.end', async ($, e, next) => {
+    try {
+      await releasePromote($, e.sessionId)
+    } catch {}
     return next(e)
   })
 
@@ -968,10 +1007,6 @@ export const register: Register = on => {
 
   // 守門：只有使用者核准（on）的才比對；hook 自己出錯時放行，不擋正常工作
   on('tool.call', async ($, e, next) => {
-    if (rt.promoteTool !== undefined && e.tool === rt.promoteTool) {
-      await initLang($)
-      return { result: await markInProject($, (e as { items?: unknown }).items) }
-    }
     let hit: Guard | undefined
     try {
       const text = inputText(e as Record<string, unknown>)

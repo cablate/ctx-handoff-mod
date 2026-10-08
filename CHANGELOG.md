@@ -11,6 +11,10 @@ All notable changes to ctx-handoff. The format follows [Keep a Changelog](https:
 - **A new front page:** the README opens with a banner and an animated overview, shows each feature in a picture, and moves the details into a [guide](docs/guide.md).
 - **Changelog in Traditional Chinese:** `CHANGELOG.zh-TW.md`, and GitHub Releases carry both languages.
 
+### Changed
+
+- **Moving rules into your repo no longer gets stuck:** Claude doesn't have to report where it put a rule, procedure or guard. The next notes update sees it in the conversation and checks the file exists. If the conversation that was asked ends first, a later one is asked; there's no limit on how many times. Before, an item Claude forgot to report was never asked about again, and nothing told you.
+
 ### Fixed
 
 - **Nothing said just before a handoff is lost from project notes:** if a notes update was already running when the handoff started, the conversation since that update began was never added. The handoff now captures it first and updates the notes right after the running update finishes. The handoff also no longer waits for the notes update before switching.

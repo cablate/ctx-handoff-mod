@@ -32,7 +32,7 @@ What you correct or explain is collected into one notes file per project, loaded
 
 The notes update every 30 of your messages, after 55 idle minutes, before a handoff, or on `/handoff distill`. Only the new part of the conversation is sent, to Sonnet 5.5 at low effort; a short update takes about 1,200 tokens. Conversations under 30k tokens are skipped. Anything that looks like a key or password is dropped. The status line counts down ("18 more messages until notes update").
 
-**Into your repo after 3 times.** When a rule has come up 3 times (or a guard is on), the next conversation in a git repo asks Claude, after it finishes what you asked, to put it where your project keeps its rules: CLAUDE.md, AGENTS.md or an existing hook. A procedure that came up 3 times becomes a project skill, `.claude/skills/<name>/SKILL.md`. Claude checks for duplicates, doesn't commit, and tells you in one line what it added and where, so it shows up in your usual diff. From then on the repo holds it, for every machine and tool, and ctx-handoff stops loading its own copy. Say no and it's undone and not asked again.
+**Into your repo after 3 times.** When a rule has come up 3 times (or a guard is on), the next conversation in a git repo asks Claude, after it finishes what you asked, to put it where your project keeps its rules: CLAUDE.md, AGENTS.md or an existing hook. A procedure that came up 3 times becomes a project skill, `.claude/skills/<name>/SKILL.md`. Claude checks for duplicates, doesn't commit, and tells you in one line what it added and where, so it shows up in your usual diff. Claude doesn't have to report anything: the next notes update sees the change in the conversation and checks the file exists. If that conversation ends before it's done, a later one is asked. From then on the repo holds it, for every machine and tool, and ctx-handoff stops loading its own copy. Say no and it's undone and not asked again.
 
 ### Where you left off
 
@@ -132,12 +132,11 @@ You won't need these in normal use. If `/handoff` is taken by your own command o
 | `turn.step` | Reads the visible text of Claude's replies in the main conversation to check their language. It doesn't change the request, the model or the reply |
 | `prompt.submit`, `prompt.context` | Holds your message during a handoff; loads notes and the progress note into a new conversation; rereads settings |
 | `$.session.messages`, `$.model.complete`, `$.model.fork` | Reads the conversation to write notes and handoff summaries |
-| `$.fs.read`, `$.fs.write`, `$.fs.exists` | Reads and writes the notes file and its backups; checks whether the project is a git repo |
+| `$.fs.read`, `$.fs.write`, `$.fs.exists` | Reads and writes the notes file and its backups; checks whether the project is a git repo, and whether a file a rule was put in exists |
 | `$.prompt.submit`, `$.command.run` | Sends the summary into the new conversation; runs `/clear` |
 | `$.env.get` | Reads three environment variables, `CLAUDE_CONFIG_DIR`, `HOME` and `USERPROFILE`, only to find your `~/.claude` folder. Nothing needs to be set |
-| `$.tool.register` | Gives Claude one tool, `mark_in_project`, to report where it put a rule or procedure in your repo |
 | `$.settings.read`, `config.set` | Reads Claude Code's `language` setting and this plugin's `pluginConfigs`; notices when you change Claude Code's settings |
-| The rest: `session.start`, `turn.complete`, `classic.Stop`, `command.run`, `$.command.register`, `ui.render`, `$.store`, `$.state`, `$.clock`, `$.ui`, `$.agent.list`, `$.session.*` | Bookkeeping: timers, the `/handoff` command, status line, panel and notices, its own storage, checking that Claude and its subagents are done before a handoff, and the "done" nudge |
+| The rest: `session.start`, `session.end`, `turn.complete`, `classic.Stop`, `command.run`, `$.command.register`, `ui.render`, `$.store`, `$.state`, `$.clock`, `$.ui`, `$.agent.list`, `$.session.*` | Bookkeeping: timers, the `/handoff` command, status line, panel and notices, its own storage, checking that Claude and its subagents are done before a handoff, and the "done" nudge |
 
 It makes no network requests of its own and starts no programs (no `$.http` or `$.process` calls). To run a session without any mod, start Claude Code with `claude --safe-mode`. See also [`SECURITY.md`](../SECURITY.md).
 
