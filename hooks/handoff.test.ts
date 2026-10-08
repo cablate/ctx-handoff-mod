@@ -141,7 +141,8 @@ test('handoff：不帶參數顯示狀態和用法，不認得的子指令只回�
 
 test('S1 門檻交接期間：人類訊息被攔下，最終送出的文字包含它', async ($, on) => {
   const w = world(on, 650_000, 1_000_000, {}, [], 5)
-  ctl.onFork = async () => { await say($, '中途訊息') }
+  // 交接 fork 產生摘要期間送出
+  ctl.handoffGate = async () => { await say($, '中途訊息') }
   await stop($)
   await w.clock.settle()
   expect(w.commands).toEqual(['clear'])
@@ -216,6 +217,37 @@ test('S1 交接 fork 與交接前整理同時發出', async ($, on) => {
   release()
   await w.clock.settle()
   expect(w.commands).toEqual(['clear'])
+})
+
+// 舊程式：整理一次只能跑一個，交接撞上正在跑的整理就直接跳過交接前整理；
+// 正在跑的那次只讀到它開始時的對話，到交接之間的最後一段永遠沒被整理（/clear 後新對話從頭算）
+test('S1 交接時已有整理在跑：交接前先讀好最後一段，等那次整理結束再補整理', async ($, on) => {
+  let turns = 5
+  const w = world(on, 650_000, 1_000_000, {}, [], () => turns)
+  w.rows.push({ role: 'user', text: '第一段的對話', toolUses: [] })
+  let release: () => void = () => {}
+  const gate = new Promise<void>(r => { release = r })
+  ctl.distillGate = () => gate
+  const first = distillNow($)
+  await w.clock.settle()
+  expect(w.completes.length).toBe(1)
+  // 整理還在跑，對話往前走並到門檻
+  w.rows.push({ role: 'user', text: '最後一段：之後一律先跑測試', toolUses: [] })
+  turns = 8
+  // /clear 之後是新對話：換 session、訊息清空
+  ctl.onClear = () => { ctl.curSid = 'S2'; w.rows.length = 0 }
+  await stop($)
+  await w.clock.settle()
+  // 不等整理就交接
+  expect(w.commands).toEqual(['clear'])
+  expect(w.logs.some(l => l.includes('排在它之後'))).toBe(true)
+  release()
+  await first
+  await w.clock.settle()
+  expect(w.completes.length).toBe(2)
+  expect(w.completes[1]?.prompt).toContain('最後一段：之後一律先跑測試')
+  // 記在舊 session 的進度：下次不重複整理同一段
+  expect((w.get('distill:S1') as { turn: number }).turn).toBe(8)
 })
 
 // ---------- S2：差異跟著下一則送進對話的訊息 ----------

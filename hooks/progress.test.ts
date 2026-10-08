@@ -222,19 +222,22 @@ test('自動交接 /clear：handoff 摘要已涵蓋，新對話不再提供進�
   expect(await blockOf($)).toBeUndefined()
 })
 
-test('自動交接：整理慢，/clear 之後才跑完也不存進度', async ($, on) => {
-  const w = world(on, 650_000, 1_000_000, {}, [], 5)
+// 舊程式：/clear 之後才跑完的整理不存進度，留下的是更早、別的 session 的進度，新對話反而拿到過時的那份
+test('自動交接：整理慢，/clear 之後才跑完：存成最新進度但標記已交接，不提供', async ($, on) => {
+  // 別的 session 留下的舊進度
+  const w = world(on, 650_000, 1_000_000, { [KEY]: { ...PROGRESS, task: '更早的任務', sid: 'S0', at: 0 } }, [], 5)
   let release: () => void = () => {}
   const wait = new Promise<void>(r => { release = r })
   ctl.distillGate = () => wait
   ctl.distillReply = actionsReply(PROGRESS)
   ctl.onClear = () => { ctl.curSid = 'S2' }
   await stop($)
-  await w.clock.advance(5_000)
+  await w.clock.advance(0)
   expect(w.commands).toEqual(['clear'])
   release()
   await w.clock.advance(0)
-  expect(w.get(KEY)).toBeUndefined()
+  expect((w.get(KEY) as Progress).task).toBe(PROGRESS.task)
+  expect((w.get(KEY) as Progress).handed).toBe(true)
   expect(await blockOf($)).toBeUndefined()
 })
 

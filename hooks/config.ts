@@ -82,9 +82,6 @@ export const KEEP = 5
 // fork 沒有取消參數：超過時限就不再等（交接放棄、攔下的訊息送回舊對話），它在背景跑完也不採用
 export const HANDOFF_TIMEOUT_MS = 3 * 60_000
 export const DISTILL_TIMEOUT_MS = 8 * 60_000
-// 交接前整理和 handoff 同時發出；整理一開始就讀好對話片段，之後不依賴這段對話，
-// 所以只等它讀完片段（幾秒）就 /clear，請求留在背景跑完
-export const DISTILL_GRACE_MS = 5_000
 export const DISTILL_EFFORT = 'low'
 export const DISTILL_MAX_TOKENS = 32_000
 export const GUARD_MAX_TOKENS = 4_000

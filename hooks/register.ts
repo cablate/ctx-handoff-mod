@@ -15,7 +15,7 @@ import type { Notes } from './notes'
 import { encodeProject, isAbs, resolveDots, slash } from './paths'
 import { anchorOf, transcriptOf } from './transcript'
 import type { Row } from './transcript'
-import { DISTILL_EFFORT, DISTILL_GRACE_MS, DISTILL_MAX_TOKENS, DISTILL_TIMEOUT_MS, GUARD_MAX_TOKENS, HANDOFF_TIMEOUT_MS, KEEP, DEFER_CAP_EXTRA, DEFER_CAP_RATIO, RELOAD_GRACE_MS, RETRY_MS, RETRY_TURNS, STOPPED, cfg, optionsOf, resetConfig, resolveConfig, settingSource, settingValue, specOf, stepSetting, thresholdOf } from './config'
+import { DISTILL_EFFORT, DISTILL_MAX_TOKENS, DISTILL_TIMEOUT_MS, GUARD_MAX_TOKENS, HANDOFF_TIMEOUT_MS, KEEP, DEFER_CAP_EXTRA, DEFER_CAP_RATIO, RELOAD_GRACE_MS, RETRY_MS, RETRY_TURNS, STOPPED, cfg, optionsOf, resetConfig, resolveConfig, settingSource, settingValue, specOf, stepSetting, thresholdOf } from './config'
 import { resetRuntime, rt } from './runtime'
 import { doneCheck, freshWork, noteCall, trackFailure } from './loops'
 import { clearNext, noteStep, peekNext, resolveReplyLang, takePending } from './lang'
@@ -192,16 +192,37 @@ async function isDistillOn($: EngineInterface) {
   return (await $.store.get('distill')) !== false
 }
 
+// 整理要用的這段對話：交接時在 /clear 之前讀好，之後才整理也不受影響（/clear 後 session id 與訊息都換了）
+type DistillSnap = { sid: string; turns: number; anchor: string | undefined; rows: readonly Row[] }
+async function distillSnap($: EngineInterface): Promise<DistillSnap> {
+  const sid = await $.session.id()
+  return {
+    sid,
+    turns: await $.session.turns(),
+    anchor: (await $.store.get(`last:${sid}`)) as string | undefined,
+    rows: (await $.session.messages()) as readonly Row[],
+  }
+}
+
 // 整理上次之後新增的對話：先讀好對話片段（之後 /clear 也不影響），再交給設定的整理模型
 // queue=false：交接前整理，之後會 /clear，不排入差異
-async function distill($: EngineInterface, why: string, queue = true) {
-  if (rt.distilling) return undefined
-  const sid = await $.session.id()
+// 一次只跑一個整理；已有整理在跑時，帶 snap 的（交接前整理）排在它之後，其他的直接略過（正在跑的那次會涵蓋）
+async function distill($: EngineInterface, why: string, queue = true, snap?: DistillSnap) {
+  if (rt.distilling) {
+    if (snap === undefined) return undefined
+    $.ui.log(t().distill.waiting(why))
+    while (rt.distilling) await rt.distillDone
+  }
+  const sid = snap?.sid ?? await $.session.id()
   const key = `distill:${sid}`
   const prev = (await $.store.get(key)) as { turn: number; anchor?: string } | undefined
-  const turns = await $.session.turns()
+  const turns = snap?.turns ?? await $.session.turns()
   if (turns <= (prev?.turn ?? 0)) return undefined
+  // 讀 store 的空檔可能有別的整理先開始
+  if (rt.distilling) return undefined
   rt.distilling = true
+  let done = () => {}
+  rt.distillDone = new Promise<void>(r => { done = r })
   rt.distillFailed = false
   await showDistillStatus($, why)
   const fail = async (reason: string) => {
@@ -211,8 +232,8 @@ async function distill($: EngineInterface, why: string, queue = true) {
   }
   try {
     // 這次整理到使用者最後一則訊息為止；下次從它之後開始
-    const anchor = (await $.store.get(`last:${sid}`)) as string | undefined
-    const rows = (await $.session.messages()) as readonly Row[]
+    const anchor = snap ? snap.anchor : (await $.store.get(`last:${sid}`)) as string | undefined
+    const rows = snap?.rows ?? (await $.session.messages()) as readonly Row[]
     const transcript = transcriptOf(rows, prev?.anchor)
     // quote 的比對對象：使用者自己送出的訊息（本程式注入的經驗與 handoff 不算）
     const userText = squash(rows.filter(r => r.role === 'user' && !r.text.startsWith(NOTE_TAG) && !r.text.startsWith(tag)).map(r => r.text).join('\n'))
@@ -271,6 +292,7 @@ async function distill($: EngineInterface, why: string, queue = true) {
     return undefined
   } finally {
     rt.distilling = false
+    done()
     await showDistillStatus($)
   }
 }
@@ -368,8 +390,7 @@ function beginPresent() {
 }
 
 async function present($: EngineInterface, tokens: number | null, kind: 'present' | 'manual', note?: string) {
-  const startedAt = await $.clock.now()
-  rt.presentStartedAt = startedAt
+  rt.presentStartedAt = await $.clock.now()
   const sid = await $.session.id()
   // rt.held 已處理到第幾則：之前的已包進送出的文字，或已另外送出
   let delivered = 0
@@ -384,14 +405,13 @@ async function present($: EngineInterface, tokens: number | null, kind: 'present
     try { await submitText($, batch) } catch (err) { $.ui.log(t().handoff.resubmitFailed(String(err))) }
   }
   try {
-    // 交接 fork 和 /clear 前的最後整理同時發出：快取都熱著
-    const lastDistill = isDistillOn($).then(on => on ? distill($, t().distill.why.before, false) : undefined).catch(() => undefined)
+    // 交接 fork 和 /clear 前的最後整理同時發出。整理要的對話片段先讀好，/clear 只等它讀完，
+    // 不等整理本身：整理在背景跑完照樣寫檔（它不排入差異），已有整理在跑就排在它之後
+    const snap = isDistillOn($).then(on => on ? distillSnap($) : undefined).catch(() => undefined)
+    void snap.then(s => s && distill($, t().distill.why.before, false, s)).catch(() => undefined)
     const handoff = await makeHandoff($, kind, tokens)
     if (handoff === undefined) { await drain(resubmit); return }
-    // 整理一開始就讀好對話片段：從交接開始最多等 DISTILL_GRACE_MS 就 /clear，
-    // 整理在背景跑完照樣寫檔（它不排入差異）
-    const left = startedAt + DISTILL_GRACE_MS - (await $.clock.now())
-    if (left > 0) await within($, lastDistill, left, undefined)
+    await snap
     const why = kind === 'manual' ? t().handoff.whyManual : t().handoff.whyTokens(tokens ?? 0)
     const included = [...rt.held]
     delivered = included.length
@@ -708,10 +728,10 @@ async function dropNote($: EngineInterface, key: string) {
 const progressKeyOf = async ($: EngineInterface) => progressKey(await projectKey($))
 const loadProgress = async ($: EngineInterface) => (await $.store.get(await progressKeyOf($))) as Progress | undefined
 
-// 已經交接出去的 session 之後才跑完的整理不存（handoff 摘要已涵蓋）
+// 已經交接出去的 session 之後才跑完的整理：照樣存成最新的一份，但標記已交接（handoff 摘要已涵蓋，不再提供）；
+// 不存的話留下的會是更早、別的 session 的進度，新對話反而拿到過時的那份
 async function saveProgress($: EngineInterface, sid: string, p: ProgressFields, at: number) {
-  if (rt.handed.has(sid)) return
-  await $.store.set(await progressKeyOf($), { ...p, sid, at } satisfies Progress)
+  await $.store.set(await progressKeyOf($), { ...p, sid, at, ...(rt.handed.has(sid) ? { handed: true as const } : {}) } satisfies Progress)
 }
 
 // 自動交接（/clear 之後把 handoff 送進新對話）：這個 session 的進度備忘不再提供；on=false 還原。
@@ -1041,7 +1061,7 @@ export const register: Register = on => {
     const hasAttachments = (e.attachments?.length ?? 0) > 0
     if (rt.presenting && !isSlash && (e.text.trim() || hasAttachments)) {
       const elapsed = rt.presentStartedAt === undefined ? 0 : Math.round(((await $.clock.now()) - rt.presentStartedAt) / 1000)
-      const wait = t().submit.wait(elapsed, Math.round(Math.max(HANDOFF_TIMEOUT_MS, DISTILL_GRACE_MS) / 60_000))
+      const wait = t().submit.wait(elapsed, Math.round(HANDOFF_TIMEOUT_MS / 60_000))
       // 只能暫存文字：mod 拿不到附件內容
       const attachNote = hasAttachments ? t().submit.attach : ''
       if (!e.text.trim()) return { drop: `${t().submit.busy(wait, attachNote)}` }

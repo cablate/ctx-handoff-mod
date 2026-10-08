@@ -81,6 +81,7 @@ const zh = {
     timeout: (min: number) => `timeout：整理超過 ${min} 分鐘沒有回應，已放棄`,
     edited: (file: string) => `整理期間經驗檔被修改，這次略過：${file}`,
     skipLog: (why: string, reason: string) => `背景整理（${why}）${reason}`,
+    waiting: (why: string) => `背景整理（${why}）：已有整理在跑，排在它之後；這段對話已先讀好`,
     doneLog: (why: string, changes: number, rejected: number, file: string) =>
       `背景整理（${why}）：${changes} 項變動${rejected ? `，丟棄 ${rejected} 行無效輸出` : ''}${changes ? `；寫入 ${file}` : ''}`,
     queued: (n: number) => `${n} 項變動排入下一則訊息`,
@@ -453,6 +454,7 @@ const en: Messages = {
     timeout: min => `timeout: no answer after ${min} minutes, gave up`,
     edited: file => `the notes file was edited during the update, skipped this time: ${file}`,
     skipLog: (why, reason) => `notes update (${why}): ${reason}`,
+    waiting: why => `notes update (${why}): another update is running, queued after it; this part of the conversation is already captured`,
     doneLog: (why, changes, rejected, file) =>
       `notes update (${why}): ${changes} change${s(changes)}${rejected ? `, dropped ${rejected} invalid line${s(rejected)}` : ''}${changes ? `; wrote ${file}` : ''}`,
     queued: n => `${n} change${s(n)} queued for your next message`,

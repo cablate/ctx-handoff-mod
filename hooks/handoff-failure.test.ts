@@ -121,16 +121,12 @@ test('交接 fork 卡住：3 分鐘後放棄並記錄，攔下的訊息送回舊
   expect(w.submits.at(-1)).toBe('之後的訊息')
 })
 
-test('交接前整理很慢：handoff 好了，從交接開始最多等 5 秒就 /clear；整理之後照樣寫檔、不排入', async ($, on) => {
+test('交接前整理很慢：對話片段先讀好，handoff 一好就 /clear，不等整理；整理之後照樣寫檔、不排入', async ($, on) => {
   const w = world(on, 650_000, 1_000_000, {}, [], 5)
   const g = gate()
   ctl.distillGate = g.wait
   await stop($)
   await w.clock.advance(0)
-  expect(w.commands).toEqual([])
-  await w.clock.advance(4_000)
-  expect(w.commands).toEqual([])
-  await w.clock.advance(1_000)
   expect(w.commands).toEqual(['clear'])
   expect(w.submits[0]).toContain('HANDOFF: 測試')
   g.release()

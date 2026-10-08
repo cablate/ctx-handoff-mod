@@ -11,6 +11,11 @@ All notable changes to ctx-handoff. The format follows [Keep a Changelog](https:
 - **A new front page:** the README opens with a banner and an animated overview, shows each feature in a picture, and moves the details into a [guide](docs/guide.md).
 - **Changelog in Traditional Chinese:** `CHANGELOG.zh-TW.md`, and GitHub Releases carry both languages.
 
+### Fixed
+
+- **Nothing said just before a handoff is lost from project notes:** if a notes update was already running when the handoff started, the conversation since that update began was never added. The handoff now captures it first and updates the notes right after the running update finishes. The handoff also no longer waits for the notes update before switching.
+- **A new conversation no longer gets an outdated progress note after a handoff:** when the last notes update finished after the switch, the progress it found was dropped, and an older note from another conversation could be offered instead.
+
 ## [0.5.0] - 2026-10-08
 
 Claude now notices its own slips: a nudge when it retries the same failure, a check when it says "done" without testing, and a reminder when it drifts out of your language. New conversations learn where the last one stopped, routines you repeat become project skills, and every setting moved to one panel tab.
