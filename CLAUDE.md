@@ -58,6 +58,7 @@ node tools/status.mjs             # 確認各 session 已熱重載、看整理�
 | `prompt.context` | 每段對話只在第一則訊息觸發一次（compaction、`/clear` 或 `$.ui.invalidate("prompt.context")` 才重算） |
 | `prompt.submit` | `attachments` 只有 `type`、`mediaType`、`filename`，沒有內容，mod 不能暫存或重送圖片 |
 | `$.store` | 所有 session 與 process 共用一個 JSON 檔（`<claude>/plugins/store/ctx-handoff_*.json`），鍵要依專案或 session 分開 |
+| `$.store` 同時寫入（2026-10-09 實測，兩個 `claude -p` 同時各跑 150 輪） | 不同的鍵不會互蓋：各自的 150 個鍵全部留下，不是整份檔案寫回。同一個鍵的讀改寫會互蓋：共用計數器 300 次只剩 180、190。跨 process 沒有鎖可用，同鍵讀改寫只能讓衝突的後果小 |
 | `$.fs.write` | 會自動建立上層目錄 |
 | 時區 | 執行環境有本地時區：`toLocaleString` 是本地、`toISOString` 是 UTC |
 | 熱重載 | 對話檔留下 `ctx-handoff: reloaded (N hooks: …)`；回合中存的檔要等回合結束才重載（落在 `turn.complete` 之後）。會清掉模組變數與計時器（攔下的訊息、排入的差異），`$.state` 保留，`register` 與 `session.start` 重跑 |
