@@ -35,7 +35,7 @@ ctx-handoff 在背景處理這些事，平常不需要打任何指令：
 
 ## 快速開始
 
-需要 Claude Code 2.1.287 以上（從這版起 mod 預設開啟），已測試到 2.1.292。
+需要 Claude Code 2.1.287 以上（從這版起 mod 預設開啟），已測試到 2.1.293。
 
 ```sh
 claude plugin marketplace add cablate/ctx-handoff-mod
