@@ -61,8 +61,7 @@ else if (!existsSync(join(dir, '.claude-plugin', 'types'))) {
 {
   const r = spawnSync(process.execPath, [join(repo, 'tools', 'docs.mjs'), 'check', dir], { cwd: dir, encoding: 'utf8' })
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`
-  report('docs', r.status === 0, out.trim().split('
-').at(-1) ?? '', out)
+  report('docs', r.status === 0, out.trim().split('\n').at(-1) ?? '', out)
 }
 
 // lint：Biome 用 npx 跑固定版本（biome.json 的 $schema 網址裡的版號），不進 package.json，repo 維持沒有 npm 依賴
