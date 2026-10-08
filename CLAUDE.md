@@ -19,7 +19,7 @@ node tools/status.mjs             # 確認各 session 已熱重載、看整理�
 - 每個真的發生過的事故，補一個在舊程式上會失敗的固定測試。
 - 改經驗檔用 `node tools/notes.mjs`（以條目為單位、預設預演），不要手寫一次性腳本。工具一覽在 `tools/README.md`。
 - 做完一段工作後的檢討紀錄在主資料夾的 `docs/work-retro.md`（不進版本控制），先結案上面的待結案項目。
-- 使用者看得到的改動要同步雙語 README，並在 `CHANGELOG.md` 的 Unreleased 加一行。
+- 使用者看得到的改動要同步雙語 README，並在兩份 CHANGELOG（`CHANGELOG.md`、`CHANGELOG.zh-TW.md`）的 Unreleased 各加一行；`tools/docs.mjs check` 會擋下兩邊對不上的。寫法與發版步驟在 `CONTRIBUTING.md` 的 Writing docs、Releasing。
 
 ## 設計決定（改之前先讀）
 

@@ -1,0 +1,105 @@
+# 更新紀錄
+
+[English](CHANGELOG.md)
+
+ctx-handoff 每個版本值得注意的改動。格式依照 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，版號依照 [Semantic Versioning](https://semver.org/)；1.0 之前，任何次版號都可能改變行為。版號以 `.claude-plugin/plugin.json` 為準；從 marketplace 安裝的使用者，只有版號變了才收得到更新。
+
+## [未發布]
+
+### 新增
+
+- **繁體中文更新紀錄：** `CHANGELOG.zh-TW.md`，GitHub Release 也同時附上兩種語言。
+
+## [0.5.0] - 2026-10-08
+
+Claude 現在會注意到自己的小錯：重跑同一個失敗時提醒、沒測試就說完成時請它驗證、講到一半漂成別的語言時提醒。新對話知道上一段停在哪，你重複做的工作會變成專案 skill，所有設定集中到面板的一個分頁。
+
+**升級：** 0.4 設過的值會保留，改在面板的「設定」分頁顯示（`/handoff panel` 後按 5），不在 `/config`。
+
+### 新增
+
+- **告訴新對話停在哪：** 你自己 `/clear`、當掉或直接開新對話後，同一個資料夾的下一段對話會被提醒一次上一段在做什麼、下一步是什麼（24 小時內）。它跟著整理筆記一起產生，不多花請求。設定：`resume_hint`。
+- **重複失敗提醒：** 同一個工具連續兩次因同樣原因失敗時，請 Claude 找出原因，不要原樣重試。設定：`retry_nudge`。
+- **說完成前先驗證：** Claude 改了程式、之後沒跑測試、建置或檢查就說完成時，請它驗證一次並附上結果。設定：`done_check`。
+- **回覆語言提醒：** Claude 的說明漂離你的語言（繁體中文、簡體中文、英文、日文）時，在這一輪過程中提醒一次。程式碼、路徑與中文裡夾的英文術語不算。設定：`reply_language`。
+- **流程變成專案 skill：** 你讓 Claude 重複做過的多步驟工作（例如發版）會記成流程；出現 3 次後，Claude 會在你的 repo 建立 `.claude/skills/<名稱>/SKILL.md`，不 commit。
+- **面板的設定分頁：** 所有設定集中在一處，標出每個值從哪來，並可以還原。
+- **整理間隔可以調：** `distill_every`（預設 30 則訊息）。
+
+### 變更
+
+- **交接摘要更好用：** 分開驗證過的與還沒驗證的改動，列出失敗過的做法與沒收尾的事，保留你訂的限制，最後給一個下一步。
+- **設定離開 `/config`：** 改放在面板，`/config` 不會越來越長。`settings.json` 裡的值仍然有效，給看不到面板的 VS Code 擴充功能用；兩邊都有時以面板為準。
+- README 為第一次接觸的讀者重寫。
+- 給貢獻者：檢查加入 Biome lint，程式拆成較小的檔案，測試依主題分檔。
+
+### 修正
+
+- 「說完成前先驗證」不再把背景子代理改的檔算成主對話的。
+
+## [0.4.0] - 2026-10-07
+
+一再出現的規則現在會放進你的 repo，換機器、換工具都看得到；調整設定也不必再改程式。
+
+### 新增
+
+- **規則放進 repo：** 出現 3 次的規則或已啟用的守門，會在下一段 git repo 對話開頭交給 Claude。Claude 會放進專案放規則的地方、檢查重複、不 commit，並說明放在哪；之後 ctx-handoff 不再帶入自己那份。你說不要就會復原。
+
+### 變更
+
+- **設定不再寫在程式裡：** 門檻、閒置時間、保持快取次數、最小對話、整理模型與語言都是 plugin 設定，更新後保留。
+- 保持快取已在實際 session 確認有效：第 2、3 次刷新（閒置 110、165 分鐘）整段都從快取讀取。
+- 給貢獻者：程式拆成較小的檔案，`CONTRIBUTING.md` 寫了程式風格，並加上 `.editorconfig`。
+
+### 修正
+
+- Claude 回報「規則已放進 repo」用的工具，在 session 接續或 mod 重新載入後仍然可用。
+
+## [0.3.0] - 2026-10-07
+
+可以從 plugin marketplace 安裝、有英文介面，並能在面板核准守門。
+
+### 新增
+
+- **從 plugin marketplace 安裝：** `claude plugin marketplace add cablate/ctx-handoff-mod`，再 `claude plugin install ctx-handoff@ctx-handoff-mod`。
+- **英文介面：** 介面語言跟著系統語系或 Claude Code 的 `language` 設定：中文用繁體中文，其他用英文。
+- **守門：** `/handoff guard suggest` 把出現 3 次的規則變成工具呼叫的檢查（擋下或提醒）。你核准前不會生效。
+- **面板：** `/handoff panel` 在輸入框上方開面板，可以核准守門、看最近一次整理、刪掉記錯的筆記（會先備份）。
+- 狀態列倒數到下一次整理筆記，整理時也會顯示。
+
+### 變更
+
+- 交接摘要與專案筆記用你在對話裡使用的語言撰寫。
+- 每條記憶改成一行標題加細節。偏好與修正整條帶入；事實與位置只帶標題。
+- 事實與位置超過 30 天沒被證實就封存（不帶入、不刪除），不再限制筆記條數。
+
+### 修正
+
+- 訊息不再重複 Claude Code 已經加上的 `[ctx-handoff]` 前綴。
+- mod 重新載入後，閒置快取計時會接續。
+- 面板不再每次重畫都讀檔，按鈕不會像卡住。
+
+## 0.2.0 - 2026-10-05
+
+筆記留在你開始工作的專案裡，整理的花費也大幅降低。
+
+**從 0.1 升級：** 舊版放錯位置的筆記不會自動搬移。請手動搬，或用 `node tools/notes.mjs`（見 [`tools/README.md`](tools/README.md)）。
+
+### 新增
+
+- `/handoff` 被你自己的指令或 skill 佔用時，改成 `/ctx-handoff`。
+- 交接與整理請求有時間上限。
+
+### 變更
+
+- 每個專案資料夾一份筆記（以 session 啟動的資料夾為準）。不再寫進 session 碰過的其他 repo。
+- 筆記改由 Sonnet 5.5（effort low）只讀新增的對話來整理，不再複製整段對話。
+
+## 0.1.0 - 2026-10-03
+
+第一版：context 到門檻時自動交接、離開時保持快取並在之後存好交接摘要，以及專案筆記。
+
+[未發布]: https://github.com/cablate/ctx-handoff-mod/compare/ctx-handoff--v0.5.0...HEAD
+[0.5.0]: https://github.com/cablate/ctx-handoff-mod/compare/ctx-handoff--v0.4.0...ctx-handoff--v0.5.0
+[0.4.0]: https://github.com/cablate/ctx-handoff-mod/compare/ctx-handoff--v0.3.0...ctx-handoff--v0.4.0
+[0.3.0]: https://github.com/cablate/ctx-handoff-mod/releases/tag/ctx-handoff--v0.3.0

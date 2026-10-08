@@ -9,4 +9,6 @@
 | `status.mjs [--logs N]` | 唯讀：各專案經驗檔大小與帶入量、最近一次整理與失敗、每個執行中 session 最後一次熱重載與最後幾則 ctx-handoff 訊息 | 查「其他 session 有沒有整理、卡在哪」時每次手寫 node 腳本讀 store 與對話檔（2026-10-05 一天 4 次）；第一次執行就抓到 `/handoff` 被使用者 skill 佔用的問題 | 輸出裡的失敗原因、沒有熱重載紀錄的 session |
 | `notes.mjs list\|apply\|roundtrip` | 以條目為單位查看與修改經驗檔：刪除（記憶、規則、流程）、取代、剪掉片段、補充、規則縮成一行、跨專案搬移；預設預演，`--write` 才寫並備份。`roundtrip` 是回歸檢查：每份真實經驗檔解析再輸出要逐位元相同，改解析或輸出後跑 | 收斂經驗檔時同一天手寫 4 支形狀相同的改檔腳本（2026-10-05） | 「比對到 N 條」停止訊息；`.ctx-handoff-backup/` 裡的備份；`roundtrip` 的 `DIFF` 行 |
 
+| `docs.mjs check|release <版本>` | `check`：英文正本與繁中版（`X.md` ↔ `X.zh-TW.md`）的章節、清單、表格、圖片、程式碼區塊、連結與行內程式碼要對上；`release`：從兩份 CHANGELOG 產生 GitHub Release 內文（英文在前、繁中在後、附比較連結）。不依賴本 repo，可以整個檔案複製到別的專案 | 雙語文件改了一邊忘了另一邊、Release 只有英文（2026-10-08 決定所有對外文件雙語） | `check` 的 `✗` 行；`release` 說找不到版本 |
+
 `lib.mjs` 是共用的經驗檔解析（和 `hooks/notes.ts` 的 `parseNotes` 同規則），`notes.test.mjs` 是 `notes.mjs` 的固定測試。

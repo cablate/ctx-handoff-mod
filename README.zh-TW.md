@@ -101,7 +101,7 @@ context 到 600k token（較小的視窗是 80%）時，會等 Claude 做完這�
 | 設定 | 預設 | 意思 |
 |---|---|---|
 | `threshold` | `600000` | context 到多少 token 時交接 |
-| `window_ratio` | `0.8` | 視窗較小時，在「視窗 × 這個比例」交接 |
+| `window_ratio` | `0.8` | 視窗較小時，在 `window × ratio`（視窗 × 這個比例）交接 |
 | 離開時保持快取 | 開 | 也可用 `/handoff refresh on\|off` |
 | `idle_minutes` | `55` | 閒置幾分鐘後保持快取（5–59） |
 | `max_refresh` | `3` | 每段閒置最多保持幾次，之後改存摘要 |
@@ -233,6 +233,6 @@ claude --plugin-dir ~/.claude/mods/ctx-handoff
 
 ## 更多
 
-- [`CHANGELOG.md`](CHANGELOG.md)：每個版本改了什麼，以及從 0.1 升級要做的事。
+- [`CHANGELOG.zh-TW.md`](CHANGELOG.zh-TW.md)：每個版本改了什麼，以及從 0.1 升級要做的事。
 - [`CONTRIBUTING.md`](CONTRIBUTING.md)：怎麼改程式。問題回報與點子請開 [issue](https://github.com/cablate/ctx-handoff-mod/issues/new/choose)。
 - 授權：[MIT](LICENSE)。

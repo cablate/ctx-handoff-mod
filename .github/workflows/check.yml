@@ -33,6 +33,8 @@ jobs:
         run: claude plugin test .
       - name: Tool tests
         run: node --test "tools/*.test.mjs"
+      - name: Bilingual docs match
+        run: node tools/docs.mjs check .
       - name: Lint
         # Same Biome version as the $schema in biome.json
         run: npx -y @biomejs/biome@2.5.15 lint --error-on-warnings .
