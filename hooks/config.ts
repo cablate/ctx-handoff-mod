@@ -80,7 +80,8 @@ export const resetConfig = () => { Object.assign(cfg, CONFIG_DEFAULTS) }
 
 export const KEEP = 5
 // fork 沒有取消參數：超過時限就不再等（交接放棄、攔下的訊息送回舊對話），它在背景跑完也不採用
-export const HANDOFF_TIMEOUT_MS = 3 * 60_000
+// 2026-10-09 不設字數上限後，摘要產生約 45–120 秒（以前 25–50 秒），3 分鐘太緊
+export const HANDOFF_TIMEOUT_MS = 5 * 60_000
 export const DISTILL_TIMEOUT_MS = 8 * 60_000
 export const DISTILL_EFFORT = 'low'
 export const DISTILL_MAX_TOKENS = 32_000

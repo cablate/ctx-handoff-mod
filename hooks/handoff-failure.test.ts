@@ -105,7 +105,7 @@ const gate = () => {
   return { wait: () => wait, release: () => release() }
 }
 
-test('交接 fork 卡住：3 分鐘後放棄並記錄，攔下的訊息送回舊對話，之後不再攔', async ($, on) => {
+test('交接 fork 卡住：5 分鐘後放棄並記錄，攔下的訊息送回舊對話，之後不再攔', async ($, on) => {
   const w = world(on, 650_000, 1_000_000, {}, [], 5)
   ctl.handoffGate = hang
   await stop($)
@@ -113,6 +113,8 @@ test('交接 fork 卡住：3 分鐘後放棄並記錄，攔下的訊息送回舊
   await say($, '等很久的訊息')
   expect(w.submits).toEqual([])
   await w.clock.advance(3 * 60_000)
+  expect(w.submits).toEqual([])
+  await w.clock.advance(2 * 60_000)
   expect(w.commands).toEqual([])
   expect(w.submits).toEqual(['等很久的訊息'])
   const err = w.get('handoff:error:C--proj') as { reason: string }

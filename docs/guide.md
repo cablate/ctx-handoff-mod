@@ -10,7 +10,7 @@ Everything about ctx-handoff in one place: how each feature behaves, every setti
 
 At 600k tokens (80% of smaller windows) it waits for Claude to finish its turn, its background tasks and subagents, then writes a handoff summary, clears the conversation and sends the summary into the new one. The new conversation says what it understood and waits for you.
 
-The summary keeps apart what was verified (tests run, results seen) and what was only changed, lists approaches that failed so they aren't tried again, notes anything still running or unsaved, keeps limits you set ("ask before pushing"), and ends with one concrete next step.
+The summary keeps apart what was verified (tests run, results seen), what was only changed and what was only discussed, lists approaches that failed so they aren't tried again, notes anything still running or unsaved, keeps limits you set ("ask before pushing") in your own words, records what was already found out (where things are, counts, root causes) and how to run the tools, and ends with one concrete next step. Questions waiting for you come with their background and options, so you can answer without scrolling back. Its length follows the work, with no word cap.
 
 - Background work that never ends (a dev server) doesn't block it forever: it hands off anyway 150k tokens past the threshold, and before 90% of the window.
 - Anything you type during a handoff goes to the new conversation with the summary. Attachments can't be held; you're asked to paste them again.

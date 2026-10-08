@@ -13,6 +13,7 @@ All notable changes to ctx-handoff. The format follows [Keep a Changelog](https:
 
 ### Changed
 
+- **Handoff summaries say more:** the 1800-character cap is gone. A summary now keeps the limits you set in your own words, says where the work stopped, what was already found out and how to run the tools, and gives questions waiting for you their background and options. Measured on real handoffs, it covers over 90% of what the next conversation needed, up from about half. Longer summaries take about 45 seconds to 2 minutes to write, so a handoff now waits up to 5 minutes (was 3).
 - **Moving rules into your repo no longer gets stuck:** Claude doesn't have to report where it put a rule, procedure or guard. The next notes update sees it in the conversation and checks the file exists. If the conversation that was asked ends first, a later one is asked; there's no limit on how many times. Before, an item Claude forgot to report was never asked about again, and nothing told you.
 
 ### Fixed

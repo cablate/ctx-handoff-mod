@@ -7,7 +7,10 @@
 //                                                                   從交接前的對話用 F 的提示重新產生摘要，存 regen/<label>/
 //   node tools/eval-handoff.mjs judge [--label L] [--handoffs L] [--model M] [--only id,id] [--jobs 3] [--redo]
 //                                                                   評審每一題，結果存 results/<label>/；--handoffs 改評 regen/<L>/ 的摘要
+//   node tools/eval-handoff.mjs compare --pair X,Y [--only id,id] [--redo]
+//                                                                   regen/X 與 regen/Y 兩兩比較（正反兩個順序），存 compare/X-vs-Y/；比提示用這個
 //   node tools/eval-handoff.mjs report [--label L]                  彙整分數與缺漏
+// 每一輪的設定（指令、模型、提示全文、題目）存在 runs/；結果與題目都不刪，數字與結論記在 docs/eval-log.md。
 // 評審用 claude -p：不帶工具、不接 MCP、不讀使用者設定（不載入 ctx-handoff，也不寫它的 store），在空資料夾執行。
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
@@ -162,6 +165,14 @@ function judgeClaude(model, system, input) {
   return runClaude([...BASE, '--setting-sources', 'project,local', '--model', model, '--system-prompt-file', `${DIR}/judge-prompt.txt`], empty, input)
 }
 
+// 每一輪的設定（指令、參數、模型、用到的提示全文、題目）存到 runs/：結果資料夾會被 --redo 覆寫、
+// judge-prompt.txt 每次評審都會換，沒有這份就看不出某一輪用的是哪一版評分標準
+function saveRun(kind, info) {
+  mkdirSync(`${DIR}/runs`, { recursive: true })
+  const at = new Date().toISOString()
+  writeFileSync(`${DIR}/runs/${at.replace(/[:.]/g, '-')}-${kind}.json`, JSON.stringify({ at, kind, argv: process.argv.slice(2), ...info }, null, 2))
+}
+
 function runClaude(argv, cwd, input) {
   return new Promise((resolve, reject) => {
     const p = spawn('claude', argv, { cwd, env: { ...process.env, CLAUDE_CODE_PLUGIN_DIRS: '' } })
@@ -188,6 +199,7 @@ async function judge() {
   const ids = readdirSync(`${DIR}/cases`).map(f => f.replace(/\.json$/, ''))
     .filter(id => (only.length === 0 || only.includes(id)) && (flag('redo') || !existsSync(`${outDir}/${id}.json`)))
     .filter(id => !from || existsSync(`${DIR}/regen/${from}/${id}.json`))
+  saveRun('judge', { label, model, handoffs: from || undefined, prompt: JUDGE_PROMPT, ids })
   console.log(`評審 ${ids.length} 題（${model}，同時 ${jobs} 個）→ ${outDir}`)
   let cost = 0
   const queue = [...ids]
@@ -223,6 +235,7 @@ async function regen() {
   mkdirSync(outDir, { recursive: true })
   const cases = readdirSync(`${DIR}/cases`).map(f => JSON.parse(readFileSync(`${DIR}/cases/${f}`, 'utf8')))
     .filter(c => (only.length === 0 || only.includes(c.id)) && c.before?.cwd && (flag('redo') || !existsSync(`${outDir}/${c.id}.json`)))
+  saveRun('regen', { label, prompt, ids: cases.map(c => c.id) })
   console.log(`重新產生 ${cases.length} 份（同時 ${jobs} 個）→ ${outDir}`)
   let cost = 0
   const queue = [...cases]
@@ -307,6 +320,7 @@ async function compare() {
     if (!existsSync(`${DIR}/regen/${x}/${c.id}.json`) || !existsSync(`${DIR}/regen/${y}/${c.id}.json`)) continue
     for (const order of ['xy', 'yx']) if (flag('redo') || !existsSync(`${outDir}/${c.id}-${order}.json`)) tasks.push({ c, order })
   }
+  saveRun('compare', { pair: [x, y], model, prompt: COMPARE_PROMPT, tasks: tasks.map(t => `${t.c.id}-${t.order}`) })
   console.log(`比較 ${tasks.length} 次（${x} vs ${y}，兩個順序）→ ${outDir}`)
   let cost = 0
   await Promise.all(Array.from({ length: jobs }, async () => {

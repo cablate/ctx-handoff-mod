@@ -63,7 +63,7 @@ ctx-handoff is a growing toolkit for long sessions: new features for working wit
 
 ### Hands off before the context fills
 
-At 600k tokens it waits for Claude and its subagents to finish, writes a summary that keeps verified work apart from unverified changes, lists what failed and the limits you set, ends with one next step, clears, and continues in a fresh conversation. Anything you type meanwhile is carried over.
+At 600k tokens it waits for Claude and its subagents to finish, writes a summary that keeps verified work apart from unverified changes, lists what failed, the limits you set in your own words and what was already found out, ends with one next step, clears, and continues in a fresh conversation. Anything you type meanwhile is carried over.
 
 ### Keeps the cache warm while you're away
 

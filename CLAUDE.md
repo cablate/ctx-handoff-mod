@@ -18,6 +18,7 @@ node tools/status.mjs             # 確認各 session 已熱重載、看整理�
 - 推送前一定跑 `node tools/check.mjs`：plugin validate、plugin test、tsc、公開資訊掃描（`<git 共用目錄>/info/private-words` 放不能出現在公開 repo 的詞，不進版本控制）。
 - 每個真的發生過的事故，補一個在舊程式上會失敗的固定測試。
 - 改經驗檔用 `node tools/notes.mjs`（以條目為單位、預設預演），不要手寫一次性腳本。工具一覽在 `tools/README.md`。
+- 改背景提示詞（交接摘要、整理）前後用 `tools/eval-handoff.mjs` 量：真實交接當題目、交接後新對話實際發生的事當答案；比較兩版提示要用 `compare`（兩份一起評、正反兩個順序），不要比單份分數（評審對長的挑得細）。題目與結果在本機 `<claude>/ctx-handoff-eval/`（真實對話，不進 repo，不刪），每輪設定在其中的 `runs/`；數字與結論記在 `docs/eval-log.md`。
 - 做完一段工作後的檢討紀錄在主資料夾的 `docs/work-retro.md`（不進版本控制），先結案上面的待結案項目。
 - 使用者看得到的改動要同步雙語 README，並在兩份 CHANGELOG（`CHANGELOG.md`、`CHANGELOG.zh-TW.md`）的 Unreleased 各加一行；`tools/docs.mjs check` 會擋下兩邊對不上的。寫法與發版步驟在 `CONTRIBUTING.md` 的 Writing docs、Releasing。
 
@@ -59,6 +60,7 @@ node tools/status.mjs             # 確認各 session 已熱重載、看整理�
 | `prompt.submit` | `attachments` 只有 `type`、`mediaType`、`filename`，沒有內容，mod 不能暫存或重送圖片 |
 | `$.store` | 所有 session 與 process 共用一個 JSON 檔（`<claude>/plugins/store/ctx-handoff_*.json`），鍵要依專案或 session 分開 |
 | `$.store` 同時寫入（2026-10-09 實測，兩個 `claude -p` 同時各跑 150 輪） | 不同的鍵不會互蓋：各自的 150 個鍵全部留下，不是整份檔案寫回。同一個鍵的讀改寫會互蓋：共用計數器 300 次只剩 180、190。跨 process 沒有鎖可用，同鍵讀改寫只能讓衝突的後果小 |
+| `claude -p --resume`（2.1.295，2026-10-09） | `--resume <id> --fork-session` 回報的 `total_cost_usd` 與 `modelUsage` 含原本那段對話的累計，不是這一次的花費。評估重產摘要時加 `--max-turns 1`，確定只寫一輪 |
 | `$.fs.write` | 會自動建立上層目錄 |
 | 時區 | 執行環境有本地時區：`toLocaleString` 是本地、`toISOString` 是 UTC |
 | 熱重載 | 對話檔留下 `ctx-handoff: reloaded (N hooks: …)`；回合中存的檔要等回合結束才重載（落在 `turn.complete` 之後）。會清掉模組變數與計時器（攔下的訊息、排入的差異），`$.state` 保留，`register` 與 `session.start` 重跑 |
