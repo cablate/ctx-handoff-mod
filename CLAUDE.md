@@ -18,7 +18,7 @@ node tools/status.mjs             # 確認各 session 已熱重載、看整理�
 - 推送前一定跑 `node tools/check.mjs`：plugin validate、plugin test、tsc、公開資訊掃描（`<git 共用目錄>/info/private-words` 放不能出現在公開 repo 的詞，不進版本控制）。
 - 每個真的發生過的事故，補一個在舊程式上會失敗的固定測試。
 - 改經驗檔用 `node tools/notes.mjs`（以條目為單位、預設預演），不要手寫一次性腳本。工具一覽在 `tools/README.md`。
-- 改背景提示詞（交接摘要、整理）前後用 `tools/eval-handoff.mjs` 量：真實交接當題目、交接後新對話實際發生的事當答案；比較兩版提示要用 `compare`（兩份一起評、正反兩個順序），不要比單份分數（評審對長的挑得細）。題目與結果在本機 `<claude>/ctx-handoff-eval/`（真實對話，不進 repo，不刪），每輪設定在其中的 `runs/`；數字與結論記在 `docs/eval-log.md`。
+- 改背景提示詞前後要量：交接摘要用 `tools/eval-handoff.mjs`（真實交接當題目、交接後新對話實際發生的事當答案），整理用 `tools/eval-distill.mjs`（真實對話片段，直接載入 `hooks/distill.ts` 跑和 mod 一樣的請求）；比較兩版提示要用 `compare`（兩份一起評、正反兩個順序），不要比單份分數（評審對長的挑得細）。題目與結果在本機 `<claude>/ctx-handoff-eval/`（真實對話，不進 repo，不刪），每輪設定在其中的 `runs/`；數字與結論記在 `docs/eval-log.md`。
 - 做完一段工作後的檢討紀錄在主資料夾的 `docs/work-retro.md`（不進版本控制），先結案上面的待結案項目。
 - 使用者看得到的改動要同步雙語 README，並在兩份 CHANGELOG（`CHANGELOG.md`、`CHANGELOG.zh-TW.md`）的 Unreleased 各加一行；`tools/docs.mjs check` 會擋下兩邊對不上的。寫法與發版步驟在 `CONTRIBUTING.md` 的 Writing docs、Releasing。
 

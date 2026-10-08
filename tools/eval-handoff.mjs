@@ -13,11 +13,11 @@
 // 每一輪的設定（指令、模型、提示全文、題目）存在 runs/；結果與題目都不刪，數字與結論記在 docs/eval-log.md。
 // 評審用 claude -p：不帶工具、不接 MCP、不讀使用者設定（不載入 ctx-handoff，也不寫它的 store），在空資料夾執行。
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { spawn } from 'node:child_process'
+import { BASE, EVAL_ROOT, claudeWith, parseVerdict, readRows, resultText, runClaude, saveRun as saveRunIn, textOf } from './eval-lib.mjs'
 import { claudeDir } from './lib.mjs'
 
 const C = claudeDir()
-const DIR = `${C}/ctx-handoff-eval/handoff`
+const DIR = `${EVAL_ROOT}/handoff`
 const args = process.argv.slice(2)
 const cmd = args[0]
 const opt = (name, def) => { const i = args.indexOf(`--${name}`); return i === -1 ? def : args[i + 1] }
@@ -31,9 +31,7 @@ const NOT_HUMAN = /^(<|\[ctx-handoff|Base directory for this skill|Stop hook fee
 export const FUTURE_USER_MAX = 12
 export const FUTURE_CHARS_MAX = 80_000
 const clip = (s, n) => (s.length > n ? `${s.slice(0, n)}…（截短）` : s)
-const textOf = c => (typeof c === 'string' ? c : Array.isArray(c) ? c.filter(x => x.type === 'text').map(x => x.text).join('\n') : '')
 const brief = v => clip(typeof v === 'string' ? v : JSON.stringify(v), 300)
-const resultText = c => (typeof c === 'string' ? c : Array.isArray(c) ? c.map(x => (x.type === 'text' ? x.text : `[${x.type}]`)).join('\n') : '')
 
 // 一個對話檔 → 題目（沒有交接就回 undefined）。純函式，測試直接餵列
 export function caseOf(rows) {
@@ -95,7 +93,6 @@ function beforeOf(c, dir) {
   return best
 }
 
-const readRows = file => readFileSync(file, 'utf8').split('\n').flatMap(l => { try { return l ? [JSON.parse(l)] : [] } catch { return [] } })
 
 function build() {
   const minAfter = Number(opt('min-after', 3))
@@ -147,46 +144,9 @@ export const JUDGE_PROMPT = `你是評審，評估一份「交接摘要（handof
 
 const judgeInput = c => `=== 交接摘要 ===\n${c.handoff}\n=== 交接摘要結束 ===\n\n=== 交接之後的新對話 ===\n${c.future}\n=== 新對話結束 ===\n\n依系統指示輸出 JSON。`
 
-// 從回覆抓出 JSON 物件（模型偶爾會包在圍欄裡）
-export function parseVerdict(text) {
-  const s = text.indexOf('{')
-  const e = text.lastIndexOf('}')
-  if (s === -1 || e <= s) return undefined
-  try { return JSON.parse(text.slice(s, e + 1)) } catch { return undefined }
-}
-
-// 不帶工具、不接 MCP、不讀使用者設定（不載入 ctx-handoff，也不寫它的 store）
-const BASE = ['-p', '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--output-format', 'json']
-
-function judgeClaude(model, system, input) {
-  const empty = `${DIR}/empty`
-  mkdirSync(empty, { recursive: true })
-  writeFileSync(`${DIR}/judge-prompt.txt`, system)
-  return runClaude([...BASE, '--setting-sources', 'project,local', '--model', model, '--system-prompt-file', `${DIR}/judge-prompt.txt`], empty, input)
-}
-
-// 每一輪的設定（指令、參數、模型、用到的提示全文、題目）存到 runs/：結果資料夾會被 --redo 覆寫、
-// judge-prompt.txt 每次評審都會換，沒有這份就看不出某一輪用的是哪一版評分標準
-function saveRun(kind, info) {
-  mkdirSync(`${DIR}/runs`, { recursive: true })
-  const at = new Date().toISOString()
-  writeFileSync(`${DIR}/runs/${at.replace(/[:.]/g, '-')}-${kind}.json`, JSON.stringify({ at, kind, argv: process.argv.slice(2), ...info }, null, 2))
-}
-
-function runClaude(argv, cwd, input) {
-  return new Promise((resolve, reject) => {
-    const p = spawn('claude', argv, { cwd, env: { ...process.env, CLAUDE_CODE_PLUGIN_DIRS: '' } })
-    let out = ''
-    let err = ''
-    p.stdout.on('data', d => { out += d })
-    p.stderr.on('data', d => { err += d })
-    p.on('error', reject)
-    p.on('close', code => {
-      try { resolve(JSON.parse(out)) } catch { reject(new Error(`claude 結束碼 ${code}：${(err || out).slice(0, 300)}`)) }
-    })
-    p.stdin.end(input)
-  })
-}
+export { parseVerdict }
+const judgeClaude = (model, system, input) => claudeWith(DIR, { model, system, input })
+const saveRun = (kind, info) => saveRunIn(DIR, kind, info)
 
 async function judge() {
   const label = opt('label', 'baseline')
