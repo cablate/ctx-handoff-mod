@@ -105,6 +105,7 @@ export function distillPrompt(anchor: string | undefined, notes: Notes, day: str
   ].join('\n')
 }
 
+export const looksSecret = (text: string) => SECRETISH.test(text)
 const SECRETISH =/(sk-[A-Za-z0-9]|gh[pousr]_|xox[bp]-|AKIA[0-9A-Z]|-----BEGIN|password|passwd|api[_-]?key|token\s*[:=]|secret\s*[:=])/i
 
 export const ACTIONS_START = '=== ACTIONS ==='

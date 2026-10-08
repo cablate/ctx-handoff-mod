@@ -5,7 +5,7 @@ import { panelTree, showSetting } from './panel'
 import type { PanelActions } from './panel'
 import { getLang, pickLang, setLang, t } from './i18n'
 import type { Lang } from './i18n'
-import { addRejected, applyActions, distillPrompt, guardPromotions, latestProgress, parseActions, squash } from './distill'
+import { addRejected, applyActions, distillPrompt, guardPromotions, latestProgress, looksSecret, parseActions, squash } from './distill'
 import type { Action, Rejected } from './distill'
 import { progressForPrompt, progressKey, progressOffer, withOffered } from './progress'
 import type { Progress, ProgressFields } from './progress'
@@ -20,8 +20,8 @@ import { DISTILL_EFFORT, DISTILL_MAX_TOKENS, DISTILL_TIMEOUT_MS, GUARD_MAX_TOKEN
 import { resetRuntime, rt } from './runtime'
 import { doneCheck, freshWork, noteCall, trackFailure } from './loops'
 import { clearNext, noteStep, peekNext, resolveReplyLang, takePending } from './lang'
-import { awayKey, describeUsage, pendingKey, pruneSeen } from './records'
-import type { Away, DistillError, DistillLast, HandoffError, Kind, Saved, Usage } from './records'
+import { addStat, awayKey, describeUsage, pendingKey, pruneSeen, statsKey } from './records'
+import type { Away, DistillError, DistillLast, HandoffError, Kind, Saved, Stats, Usage } from './records'
 import { HANDOFF_PROMPT, forkFailure, heldBlock } from './handoff'
 import { markAsked, promoteCandidates, promoteItems, promoteText, releaseAsked } from './promote'
 import type { PromoteAsk } from './promote'
@@ -90,12 +90,30 @@ async function touchSeen($: EngineInterface, key: string) {
   if (seen[key] === undefined) await $.store.set('seen', { ...seen, [key]: await $.clock.now() })
 }
 
+// 累計統計（北極星的量測用）：記帳失敗不影響原本的流程；疑似金鑰的內容不記
+// 同一個 process 的寫入排隊：讀改寫同時進行時後寫的會蓋掉先寫的（交接與交接前整理並行）
+async function stat($: EngineInterface, what: string, n = 1, event?: { failure?: string; hit?: string }) {
+  const run = rt.statQueue.then(() => writeStat($, what, n, event))
+  rt.statQueue = run
+  await run
+}
+
+async function writeStat($: EngineInterface, what: string, n: number, event?: { failure?: string; hit?: string }) {
+  try {
+    const clean = (s: string | undefined) => (s !== undefined && looksSecret(s) ? t().reject.secret : s)
+    const key = statsKey(await projectKey($))
+    const prev = (await $.store.get(key)) as Stats | undefined
+    await $.store.set(key, addStat(prev, await $.clock.now(), what, n, { failure: clean(event?.failure), hit: clean(event?.hit) }))
+  } catch { /* 只是記帳 */ }
+}
+
 // 失敗寫進 store 讓 /handoff 看得到；在場交接失敗還要擋一陣子才重試
 async function recordFailure($: EngineInterface, kind: Kind, tokens: number | null, reason: string, sid?: string) {
   const at = await $.clock.now()
   const turns = await $.session.turns()
   const err: HandoffError = { at, sessionId: sid ?? await $.session.id(), kind, reason, tokens, turns }
   await $.store.set(`handoff:error:${await projectKey($)}`, err)
+  await stat($, `handoff.${kind}.fail`, 1, { failure: reason })
   if (kind === 'present' || kind === 'manual') rt.retryAfter = { turns, at }
 }
 
@@ -230,6 +248,7 @@ async function distill($: EngineInterface, why: string, queue = true, snap?: Dis
     rt.distillFailed = true
     $.ui.log(t().distill.failLog(why, reason))
     await $.store.set(`distill:error:${await projectKey($)}`, { at: await $.clock.now(), why, reason })
+    await stat($, 'distill.fail', 1, { failure: `${why}: ${reason}` })
   }
   try {
     // 這次整理到使用者最後一則訊息為止；下次從它之後開始
@@ -268,6 +287,7 @@ async function distill($: EngineInterface, why: string, queue = true, snap?: Dis
       const reason = t().distill.edited(file)
       $.ui.log(t().distill.skipLog(why, reason))
       await $.store.set(`distill:error:${await projectKey($)}`, { at: now, why, reason })
+      await stat($, 'distill.fail', 1, { failure: `${why}: ${reason}` })
       rt.distillFailed = true
       return r
     }
@@ -281,6 +301,7 @@ async function distill($: EngineInterface, why: string, queue = true, snap?: Dis
     await touchSeen($, key)
     const usage = describeUsage({ input: r.usage.input_tokens, cacheRead: r.usage.cache_read_input_tokens, cacheCreation: r.usage.cache_creation_input_tokens, output: r.usage.output_tokens, ms: now - started })
     await $.store.set(`distill:last:${await projectKey($)}`, { at: now, why, changes, file, usage, rejected } satisfies DistillLast)
+    await stat($, 'distill.ok')
     await refreshPanel($)
     $.ui.log(t().distill.doneLog(why, changes.length, rejected.count, file))
     // 先寫檔再排入；差異跟著下一則真正送進對話的訊息帶入（見 prompt.submit）
@@ -379,6 +400,7 @@ async function onIdle($: EngineInterface) {
     await $.store.set(key, { handoff } satisfies Away)
     await touchSeen($, key)
     $.ui.log(t().idle.awaySavedLog(tokens))
+    await stat($, 'handoff.away.ok')
     $.ui.toast(t().idle.awaySavedToast)
   } finally {
     rt.busy = false
@@ -400,15 +422,19 @@ async function present($: EngineInterface, tokens: number | null, kind: 'present
   const sid = await $.session.id()
   // rt.held 已處理到第幾則：之前的已包進送出的文字，或已另外送出
   let delivered = 0
-  const drain = async (send: (batch: string) => Promise<void>) => {
+  const drain = async (send: (batch: string, n: number) => Promise<void>) => {
     while (rt.held.length > delivered) {
+      const n = rt.held.length - delivered
       const batch = rt.held.slice(delivered).join('\n\n')
       delivered = rt.held.length
-      await send(batch)
+      await send(batch, n)
     }
   }
-  const resubmit = async (batch: string) => {
-    try { await submitText($, batch) } catch (err) { $.ui.log(t().handoff.resubmitFailed(String(err))) }
+  const resubmit = async (batch: string, n: number) => {
+    try { await submitText($, batch) } catch (err) {
+      $.ui.log(t().handoff.resubmitFailed(String(err)))
+      await stat($, 'held.lost', n, { failure: String(err) })
+    }
   }
   try {
     // 交接 fork 和 /clear 前的最後整理同時發出。整理要的對話片段先讀好，/clear 只等它讀完，
@@ -442,6 +468,7 @@ async function present($: EngineInterface, tokens: number | null, kind: 'present
     } else {
       rt.retryAfter = undefined
       rt.refreshes = 0
+      await stat($, `handoff.${kind}.ok`)
       // 文字建好之後才到的訊息：接在 handoff 那一輪之後送出
       await drain(resubmit)
     }
@@ -455,9 +482,11 @@ async function present($: EngineInterface, tokens: number | null, kind: 'present
       $.ui.log(t().handoff.failedCleanup(String(err2)))
     }
   } finally {
+    const held = rt.held.length
     rt.presenting = false
     rt.held = []
     rt.busy = false
+    if (held > 0) await stat($, 'held', held)
   }
 }
 
@@ -609,9 +638,11 @@ async function guardSummary($: EngineInterface) {
   return guardSummaryText(await loadGuards($), (await guardCandidates($)).length)
 }
 
-async function recordHit($: EngineInterface, id: number) {
+async function recordHit($: EngineInterface, id: number, tool: string, input: string) {
   const guards = await loadGuards($)
   await $.store.set(await guardsKey($), guards.map(g => (g.id === id ? { ...g, hits: g.hits + 1 } : g)))
+  // 擋得對不對程式判斷不了：留指令片段，評估時再看
+  await stat($, 'guard.hit', 1, { hit: `#${id} ${tool}: ${input}` })
   await refreshPanel($)
 }
 
@@ -1017,7 +1048,7 @@ export const register: Register = on => {
     }
     await initLang($)
     if (!hit) return watchCall(e, await next(e))
-    await recordHit($, hit.id)
+    await recordHit($, hit.id, e.tool, inputText(e as Record<string, unknown>))
     const head = `${tag} ${t().guard.head(hit.id, hit.rule, hit.message)}`
     if (hit.mode === 'deny') {
       $.ui.toast(t().guard.denyToast(hit.id, e.tool, hit.rule))
@@ -1051,6 +1082,7 @@ export const register: Register = on => {
     if (away !== undefined && away.held === undefined) {
       await $.store.delete(awayKey(await $.session.id()))
       $.ui.log(t().idle.outdated)
+      await stat($, 'away.stale')
     }
     // 每個回合都用到快取，TTL 從這裡重算
     await schedule($)
@@ -1263,7 +1295,7 @@ async function resume($: EngineInterface) {
 
 ${handoff}`)
       .then(async failed => {
-        if (!failed) return
+        if (!failed) { await stat($, 'away.resume'); return }
         $.ui.log(t().cmd.resumeFailedLog(failed.reason))
         await recordFailure($, 'away', null, t().handoff.reasonStage(failed.stage, failed.reason), sid)
         // 還在舊對話：放回離席 handoff（連同攔下的訊息），可以再 /handoff resume 或 continue
@@ -1310,6 +1342,7 @@ async function keepOld($: EngineInterface) {
   const away = (await $.store.get(key)) as Away | undefined
   if (away === undefined) return { text: `${t().cmd.noAway}` }
   await $.store.delete(key)
+  await stat($, 'away.continue')
   const msg = away.held
   if (msg === undefined) return { text: `${t().cmd.discarded}` }
   $.clock.after(0, () => void submitText($, msg).catch(err => $.ui.log(t().cmd.sendHeldFailed(String(err)))))

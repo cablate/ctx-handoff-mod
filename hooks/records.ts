@@ -42,3 +42,23 @@ export function pruneSeen(keys: readonly string[], seen: Record<string, number>,
   }
   return { changed, expired }
 }
+
+// 累計統計（docs/north-star.md 的量測用）：一個工作區一份，只記帳、不改行為。
+// counts：事件次數；failures：最近的失敗原因；hits：最近的守門命中（指令片段，評估時再判斷擋得對不對）
+export type StatEvent = { at: number; what: string; detail: string }
+export type Stats = { since: number; counts: Record<string, number>; failures: StatEvent[]; hits: StatEvent[] }
+// 只防無限長大，不是品質上限
+export const STATS_RECENT = 20
+export const STATS_DETAIL_MAX = 200
+export const statsKey = (projectKey: string) => `stats:${projectKey}`
+
+export function addStat(prev: Stats | undefined, now: number, what: string, n = 1, event?: { failure?: string; hit?: string }): Stats {
+  const s: Stats = prev ?? { since: now, counts: {}, failures: [], hits: [] }
+  const push = (list: StatEvent[], detail: string) => [...list, { at: now, what, detail: detail.slice(0, STATS_DETAIL_MAX) }].slice(-STATS_RECENT)
+  return {
+    since: s.since,
+    counts: { ...s.counts, [what]: (s.counts[what] ?? 0) + n },
+    failures: event?.failure === undefined ? s.failures : push(s.failures, event.failure),
+    hits: event?.hit === undefined ? s.hits : push(s.hits, event.hit),
+  }
+}

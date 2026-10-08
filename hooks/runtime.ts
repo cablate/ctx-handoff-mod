@@ -32,6 +32,8 @@ export const rt = {
   distilling: false,
   // 正在跑的整理結束時 resolve：交接前整理撞上它時排在它之後
   distillDone: undefined as Promise<void> | undefined,
+  // 統計寫入排隊（writeStat 不丟例外，鏈不會斷）
+  statQueue: Promise.resolve() as Promise<void>,
   // 上一次整理有沒有失敗（有回答但沒套用也算），給 /handoff distill 判斷
   distillFailed: false,
   // 放進專案的工具完整名稱（mcp__<plugin>__<name>），以註冊結果為準；這個 process 沒註冊就是 undefined
