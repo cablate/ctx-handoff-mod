@@ -203,5 +203,7 @@ test('回覆語言：/handoff 狀態在防呆提醒那行顯示設定與解析�
 
 test('回覆語言：/handoff 狀態在 language 沒設時顯示 auto → off', async ($, on) => {
   world(on, 1000, 1_000_000, {}, [], 0, null)
+  // language 沒設時介面語言看系統語系：釘住介面語言，結果才不跟著執行測試那台機器（2026-10-08 CI 是英文而失敗）
+  ctl.panelSettings = { language: 'zh-TW' }
   expect((await cmd($, '')).text).toContain('回覆語言 auto → off')
 })
