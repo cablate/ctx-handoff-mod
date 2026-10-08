@@ -13,7 +13,7 @@ test('守門：啟用的 deny 擋下違規、放行符合 unless 的寫法，並
   expect(ok.deny).toBeUndefined()
   const other = await $.tool.call({ tool: 'Read', file_path: 'git push.md' })
   expect(other.deny).toBeUndefined()
-  expect((w.get('guards:C--proj') as { hits: number }[])[0]?.hits).toBe(1)
+  expect((w.get('stats:C--proj') as { counts: Record<string, number> }).counts['guard.hit.1']).toBe(1)
 })
 
 test('守門：草稿與停用的不生效', async ($, on) => {
@@ -75,4 +75,14 @@ test('守門：/handoff guard on|mode|drop 改狀態', async ($, on) => {
   expect(missing.text).toContain('沒有守門 #9')
   await cmd($, 'guard drop 1')
   expect(w.get('guards:C--proj')).toEqual([])
+})
+
+// 2026-10-09 實測：$.store 同一個鍵的讀改寫會互蓋。命中若改守門資料，會蓋掉另一個 session 剛在面板按的核准
+test('守門：命中只記在統計、不改守門資料；列表照樣顯示觸發次數', async ($, on) => {
+  const w = world(on, 1000, 1_000_000, { 'guards:C--proj': [pushGuard('on')] })
+  const before = JSON.stringify(w.get('guards:C--proj'))
+  await $.tool.call({ tool: 'Bash', command: 'git push origin main' })
+  await $.tool.call({ tool: 'Bash', command: 'git push origin dev' })
+  expect(JSON.stringify(w.get('guards:C--proj'))).toBe(before)
+  expect((await cmd($, 'guard')).text).toContain('已觸發 2 次')
 })

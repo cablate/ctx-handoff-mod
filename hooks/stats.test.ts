@@ -54,6 +54,6 @@ test('統計：守門命中留下指令片段給評估判斷擋得對不對；�
   await $.tool.call({ tool: 'Bash', command: 'git push origin main' })
   await $.tool.call({ tool: 'Bash', command: 'GH=ghp_abc git push' })
   const s = statsOf(w)
-  expect(s?.counts['guard.hit']).toBe(2)
+  expect(s?.counts['guard.hit.1']).toBe(2)
   expect(s?.hits.map(h => h.detail)).toEqual(['#1 Bash: git push origin main', '疑似金鑰'])
 })

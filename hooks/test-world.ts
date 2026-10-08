@@ -250,7 +250,7 @@ export const lastOf =(w: World) => w.get('distill:last:C--proj') as { changes: s
 export const NOTES_PATH = 'C:/Users/u/.claude/projects/C--proj/memory/ctx-handoff.md'
 export const pushGuard = (state: string, mode = 'deny') => ({
   id: 1, rule: '推送前先跑 preflight', tool: 'Bash', match: 'git\\s+push', unless: 'preflight', message: '先跑 preflight 再推',
-  mode, state, hits: 0, at: 0,
+  mode, state, at: 0,
 })
 
 // 面板畫在輸入框上方（AbovePrompt）；/handoff panel 打開後才畫

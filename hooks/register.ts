@@ -9,7 +9,7 @@ import { addRejected, applyActions, distillPrompt, guardPromotions, latestProgre
 import type { Action, Rejected } from './distill'
 import { progressForPrompt, progressKey, progressOffer, withOffered } from './progress'
 import type { Progress, ProgressFields } from './progress'
-import { GUARD_MIN_COUNT, applyGuardChange, guardCandidatesOf, guardChangeOf, guardHits, guardListText, guardPrompt, guardSummaryText, inputText, parseGuards, withProposals } from './guards'
+import { GUARD_MIN_COUNT, applyGuardChange, guardCandidatesOf, guardChangeOf, guardHitKey, guardHits, guardListText, guardPrompt, guardSummaryText, inputText, parseGuards, withHits, withProposals } from './guards'
 import type { Guard, GuardMode } from './guards'
 import { NOTE_TAG, PROJECT_DECLINED, PROJECT_IN, contextText, localStamp, memHead, noteBlock, parseNotes, renderNotes, tag } from './notes'
 import type { Notes } from './notes'
@@ -598,7 +598,13 @@ async function suggestGuards($: EngineInterface) {
   }
 }
 
-const guardList = async ($: EngineInterface) => guardListText(await loadGuards($))
+// 顯示用：併上統計裡的命中次數
+async function guardViews($: EngineInterface) {
+  const stats = (await $.store.get(statsKey(await projectKey($)))) as Stats | undefined
+  return withHits(await loadGuards($), stats?.counts)
+}
+
+const guardList = async ($: EngineInterface) => guardListText(await guardViews($))
 
 async function guardCommand($: EngineInterface, args: string[]) {
   const [action = '', idText = '', modeText = ''] = args
@@ -639,10 +645,8 @@ async function guardSummary($: EngineInterface) {
 }
 
 async function recordHit($: EngineInterface, id: number, tool: string, input: string) {
-  const guards = await loadGuards($)
-  await $.store.set(await guardsKey($), guards.map(g => (g.id === id ? { ...g, hits: g.hits + 1 } : g)))
-  // 擋得對不對程式判斷不了：留指令片段，評估時再看
-  await stat($, 'guard.hit', 1, { hit: `#${id} ${tool}: ${input}` })
+  // 次數記在統計，不改守門資料（避免和面板核准互蓋）；擋得對不對程式判斷不了，留指令片段評估時再看
+  await stat($, guardHitKey(id), 1, { hit: `#${id} ${tool}: ${input}` })
   await refreshPanel($)
 }
 
@@ -655,7 +659,7 @@ const panelData = atom({ plugin: 'ctx-handoff', key: 'panelData' } as const, nul
 async function loadPanelData($: EngineInterface): Promise<PanelData> {
   const file = await notesFile($)
   const notes = parseNotes(await readText($, file))
-  const guards = await loadGuards($)
+  const guards = await guardViews($)
   const d = (await $.store.get(`distill:last:${await projectKey($)}`)) as DistillLast | undefined
   return panelSnapshot(file, notes, guards, d, localStamp(await $.clock.now()).slice(0, 10), await settingRows($))
 }

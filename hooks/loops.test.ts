@@ -126,8 +126,8 @@ test('重複失敗：錯誤不同、中間成功過、別的工具成功都不�
 
 test('重複失敗：和守門提醒並存，守門的 deny 不受影響', async ($, on) => {
   world(on, 1000, 1_000_000, { 'guards:C--proj': [
-    { id: 1, rule: '別碰 foo', tool: 'Bash', match: 'foo', message: '不要', mode: 'remind', state: 'on', hits: 0, at: 0 },
-    { id: 2, rule: '禁止 rm', tool: 'Bash', match: 'rm -rf', message: '不可', mode: 'deny', state: 'on', hits: 0, at: 0 },
+    { id: 1, rule: '別碰 foo', tool: 'Bash', match: 'foo', message: '不要', mode: 'remind', state: 'on', at: 0 },
+    { id: 2, rule: '禁止 rm', tool: 'Bash', match: 'rm -rf', message: '不可', mode: 'deny', state: 'on', at: 0 },
   ] })
   ctl.toolReply = () => fail('same failure')
   await $.tool.call({ tool: 'Bash', command: 'foo' })

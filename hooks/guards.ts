@@ -17,7 +17,7 @@ export type GuardMode = typeof GUARD_MODES[number]
 export type GuardState = 'proposed' | 'on' | 'off'
 export type Guard = {
   id: number; rule: string; tool: string; match: string; unless?: string; message: string
-  mode: GuardMode; state: GuardState; hits: number; at: number
+  mode: GuardMode; state: GuardState; at: number
   // 提案時驗證過的範例：bad 會被擋、good 會放行
   bad?: string; good?: string
   // 提案時試比對這段對話已跑過的工具呼叫：命中幾次、總共幾次
@@ -25,6 +25,12 @@ export type Guard = {
   // 放進專案：「已在 <位置>」（個人這份停用）或「不放」
   project?: string
 }
+// 命中次數不存在守門資料裡：每次命中都改同一筆，會和面板核准互蓋（$.store 同一個鍵的讀改寫，見 CLAUDE.md 平台事實）。
+// 改記在統計 stats:<工作區> 的 guard.hit.<編號>，顯示時才併進來
+export type GuardView = Guard & { hits: number }
+export const guardHitKey = (id: number) => `guard.hit.${id}`
+export const withHits = (guards: Guard[], counts: Record<string, number> = {}): GuardView[] =>
+  guards.map(g => ({ ...g, hits: counts[guardHitKey(g.id)] ?? 0 }))
 
 // 比對對象：工具參數裡的字串值（Bash 就是 command），其他值轉成 JSON，以換行串起來
 export function inputText(input: Record<string, unknown>) {
@@ -127,12 +133,12 @@ export const guardCandidatesOf = (rules: Rule[], guards: Guard[]) =>
 export function withProposals(out: ReturnType<typeof parseGuards>['out'], guards: Guard[], calls: { tool: string; input: Record<string, unknown> }[], at: number) {
   let id = guards.reduce((n, g) => Math.max(n, g.id), 0)
   return out.map(g => ({
-    ...g, id: ++id, state: 'proposed' as const, hits: 0, at,
+    ...g, id: ++id, state: 'proposed' as const, at,
     replay: { hits: calls.filter(c => guardHits(g, c.tool, inputText(c.input))).length, calls: calls.length },
   }))
 }
 
-export function guardListText(guards: Guard[]) {
+export function guardListText(guards: GuardView[]) {
   const m = t()
   if (guards.length === 0) return m.guard.none(GUARD_MIN_COUNT)
   return [
