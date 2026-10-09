@@ -152,10 +152,10 @@ export const LANG_NAMES: Record<ReplyLang, string> = { 'zh-TW': '繁體中文', 
 // 提醒用目標語言寫（模型讀起來自然）；程式碼、指令、路徑與專有名詞維持原文
 export function reminderText(target: ReplyLang): string {
   switch (target) {
-    case 'zh-TW': return `${tag} 你剛才那段說明不是繁體中文。之後的說明請用繁體中文（程式碼、指令、路徑與專有名詞維持原文）。`
-    case 'zh-CN': return `${tag} 你刚才那段说明不是简体中文。之后的说明请用简体中文（代码、命令、路径和专有名词保持原文）。`
-    case 'en': return `${tag} Your last explanation was not in English. Please write explanations in English from now on (keep code, commands, paths and proper nouns as they are).`
-    case 'ja': return `${tag} 先ほどの説明は日本語ではありませんでした。以降の説明は日本語で書いてください（コード、コマンド、パス、固有名詞は原文のままで構いません）。`
+    case 'zh-TW': return `${tag} 你剛才那段說明不是繁體中文。之後的說明請用繁體中文（程式碼、指令、路徑與專有名詞維持原文）。使用者要你寫的其他語言內容（翻譯、英文文件等）照原本的要求寫。`
+    case 'zh-CN': return `${tag} 你刚才那段说明不是简体中文。之后的说明请用简体中文（代码、命令、路径和专有名词保持原文）。用户要你写的其他语言内容（翻译、英文文档等）照原本的要求写。`
+    case 'en': return `${tag} Your last explanation was not in English. Please write explanations in English from now on (keep code, commands, paths and proper nouns as they are). Content the user asked for in another language, such as a translation, stays as requested.`
+    case 'ja': return `${tag} 先ほどの説明は日本語ではありませんでした。以降の説明は日本語で書いてください（コード、コマンド、パス、固有名詞は原文のままで構いません）。ユーザーが別の言語で頼んだ内容（翻訳、英語の文書など）はそのままで構いません。`
   }
 }
 

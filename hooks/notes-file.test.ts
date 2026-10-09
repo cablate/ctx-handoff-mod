@@ -404,7 +404,7 @@ test('記憶帶入新對話：偏好與修正整條、事實只帶標題、封�
   w.files.set(NOTES, TIERED_NOTES)
   const r = await $.prompt.context({ blocks: [] })
   const text = r.blocks.find(b => b.name === 'ctxHandoffProject')?.text ?? ''
-  expect(text).toContain(['## 使用者的偏好與修正', '- [feedback] 回報用條列', '  - 做法：一點一行', '  - 理由：好讀'].join('\n'))
+  expect(text).toContain(['## 使用者的偏好與修正（照做，不用再問使用者）', '- [feedback] 回報用條列', '  - 做法：一點一行', '  - 理由：好讀'].join('\n'))
   expect(text).toContain(['- [project] 新鮮的事實', '- [project] 沒有日期的事實'].join('\n'))
   expect(text).not.toContain('細節只在正本')
   expect(text).not.toContain('很久沒證實的位置')

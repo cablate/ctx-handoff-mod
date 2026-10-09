@@ -1,13 +1,15 @@
 // 守門：把反覆被提醒的規則變成工具呼叫前的比對。型別、提示、模型提案的驗證與比對（純函式，不碰 $）
 import { t } from './i18n'
 import { ACTIONS_END, ACTIONS_START } from './distill'
-import { inProject } from './notes'
+import { NOTE_TAG, PROJECT_DECLINED, inProject, projectOf, promotedAtOf, ruleText } from './notes'
 import type { Rule } from './notes'
 import { clip } from './transcript'
 
 // ---------- 守門：反覆被提醒的規則，改成工具呼叫前的機械檢查 ----------
 // 模型只提草稿（proposed），使用者 /handoff guard on N 核准才生效；依工作區存在 $.store，不進經驗檔
 export const GUARD_MIN_COUNT = 3
+// 每段新對話開頭最多請 AI 問幾條草稿：開頭的 context 有限（和放進專案的 PROMOTE_ITEMS 同理），其餘留給之後的對話
+export const GUARD_ASK_ITEMS = 3
 const GUARD_PATTERN_MAX = 300
 export const GUARD_MODES = ['deny', 'remind'] as const
 // tool.call 輸入裡不屬於工具參數的鍵
@@ -125,9 +127,21 @@ export function parseGuards(text: string, names: Set<string>) {
 }
 
 // ---------- 守門的資料變換與列表文字（register.ts 負責讀寫 store） ----------
-// 出現 GUARD_MIN_COUNT 次以上、還沒有守門（任何狀態）的規則
+// 寫成文字還擋不住的才升級成守門（維護者 2026-10-09）：放進 repo 之後使用者又糾正了（次數比放進去時多），
+// 或使用者不要放進 repo、卻已經講了 GUARD_MIN_COUNT 次。還沒處理放進 repo 的先走放進 repo；已有守門（任何狀態，含使用者說不要的）不再提
+const escalated = (r: Rule) => {
+  if (inProject(r)) { const at = promotedAtOf(r); return at !== undefined && r.count > at }
+  return projectOf(r) === PROJECT_DECLINED && r.count >= GUARD_MIN_COUNT
+}
 export const guardCandidatesOf = (rules: Rule[], guards: Guard[]) =>
-  rules.filter(r => r.count >= GUARD_MIN_COUNT && !inProject(r) && !guards.some(g => g.rule === r.name))
+  rules.filter(r => escalated(r) && !guards.some(g => g.rule === r.name))
+
+// 新對話開頭請 AI 問使用者要不要採用的守門草稿：AI 做完使用者的事再問，使用者的回答由背景整理從對話記下
+export const guardAskText = (drafts: { guard: Guard; rule: Rule | undefined }[]) => [
+  `${NOTE_TAG} 下面這些規則已經寫成文字，AI 還是一再違反，ctx-handoff 起草了守門：在 AI 呼叫工具之前比對參數，違規時提醒或擋下。先做完使用者這次交代的事，再在回覆最後用一兩句白話問使用者要不要採用：說明它在什麼情況會出現、會做什麼。使用者正在處理緊急問題就不要問。`,
+  ...drafts.map(({ guard: g, rule: r }) => `- 守門 #${g.id}（${g.mode === 'deny' ? '擋下' : '提醒'}）：規則「${g.rule}」${r ? `（使用者提過 ${r.count} 次；${ruleText(r)}）` : ''}｜工具 ${g.tool} 符合 /${g.match}/${g.unless ? `，除非 /${g.unless}/` : ''}時，告訴 AI：${g.message}`),
+  '使用者想討論就回答問題，例如會不會擋到正常工作、要提醒還是擋下。使用者說要或不要，不用呼叫任何工具，背景整理會從對話記下；使用者沒回應就不要追問。',
+].join('\n')
 
 // 模型提的草稿加上編號、狀態與試比對（這段對話已跑過的工具呼叫命中幾次）
 export function withProposals(out: ReturnType<typeof parseGuards>['out'], guards: Guard[], calls: { tool: string; input: Record<string, unknown> }[], at: number) {

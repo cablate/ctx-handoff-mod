@@ -103,7 +103,7 @@ export function claimsDone(message: string | undefined): boolean {
 }
 
 export const doneCheckText = () =>
-  `${tag} 你說完成了，但這一輪改了檔案之後沒有跑任何測試或檢查。請跑相關的驗證並附上結果；如果沒辦法驗證，改口說明哪些沒驗證。`
+  `${tag} 你說完成了，但這一輪改了檔案之後沒有跑任何測試或檢查。請跑和這次改動相關的測試或檢查，在回覆附上跑了什麼、結果如何；沒辦法驗證的，說明哪些沒驗證、為什麼，不要說完成。`
 
 // 回合結束時要不要擋下停止、請模型先驗證。每個回合最多一次；stopHookActive＝這次停止已經被別的 hook 擋過一次
 export function doneCheck(work: Work, message: string | undefined, stopHookActive: boolean): string | undefined {

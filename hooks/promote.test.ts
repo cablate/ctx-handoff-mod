@@ -41,7 +41,8 @@ test('放進專案：git repo 裡，出現 3 次以上的規則與啟用中的�
   expect(text).toContain('- 守門 #1（擋下）：推送前先跑 preflight')
   expect(text).not.toContain('規則二')
   expect(text).not.toContain('守門 #2')
-  expect(Object.keys(w.get('promote:C--proj') as object).sort()).toEqual(['g:1', 'r:正式站刪除要斷言筆數'])
+  // 草稿 #2 不在放進 repo 的交代裡，另由守門詢問（q:2）問使用者要不要採用
+  expect(Object.keys(w.get('promote:C--proj') as object).sort()).toEqual(['g:1', 'q:2', 'r:正式站刪除要斷言筆數'])
   expect((w.get('promote:C--proj') as Record<string, { sid: string }>)['g:1']?.sid).toBe('S1')
 })
 
@@ -102,7 +103,8 @@ test('放進專案：整理認出放好了，規則記「已在」、不再帶�
   )
   await w.clock.advance(60_000)
   await distillNow($)
-  expect(w.files.get(NOTES) ?? '').toContain('### 正式站刪除要斷言筆數（4 次）\n- 規則：DELETE 前先在 DO 區塊斷言筆數\n- 專案：已在 AGENTS.md')
+  // 記下放進去時是第幾次：之後次數再增加，就是寫成文字後又被糾正，該升級成守門
+  expect(w.files.get(NOTES) ?? '').toContain('### 正式站刪除要斷言筆數（4 次）\n- 規則：DELETE 前先在 DO 區塊斷言筆數\n- 專案：已在 AGENTS.md（第 4 次時）\n')
   const g = (w.get('guards:C--proj') as { state: string; project?: string }[])[0]
   expect(g?.state).toBe('off')
   expect(g?.project).toBe('已在 .claude/hooks/push-guard.mjs')
@@ -152,7 +154,7 @@ test('放進專案：「不放」找不到使用者原話就丟掉', async ($, o
 test('放進專案：已在專案的規則不會再被提議成個人守門，整理提示也標出 repo 才是正本', async ($, on) => {
   const w = world(on, 100_000, 1_000_000, {}, [], 5)
   w.files.set(NOTES, PROMOTE_NOTES.replace('- 規則：DELETE 前先在 DO 區塊斷言筆數', '- 規則：DELETE 前先在 DO 區塊斷言筆數\n- 專案：已在 AGENTS.md'))
-  expect((await cmd($, 'guard suggest')).text).toContain('沒有出現 3 次以上、還沒有守門的規則')
+  expect((await cmd($, 'guard suggest')).text).toContain('沒有寫進 repo 後又被糾正、或不放進 repo 卻講了 3 次以上、還沒有守門的規則')
   await distillNow($)
-  expect(w.forks.at(-1) ?? '').toContain('正式站刪除要斷言筆數｜出現 4 次｜DELETE 前先在 DO 區塊斷言筆數｜已在 AGENTS.md（repo 裡的才是正本，不要 update_rule）')
+  expect(w.forks.at(-1) ?? '').toContain('正式站刪除要斷言筆數｜出現 4 次｜DELETE 前先在 DO 區塊斷言筆數｜已在 AGENTS.md（repo 裡的才是正本，不要 update_rule；AI 又犯而被使用者糾正時照樣 confirm_rule）')
 })

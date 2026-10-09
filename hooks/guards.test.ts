@@ -29,12 +29,15 @@ test('守門：remind 照常執行，結果後面附提醒', async ($, on) => {
   expect(r.context?.[0]).toContain('先跑 preflight 再推')
 })
 
-test('守門：suggest 只送 3 次以上的規則，驗證草稿並試比對這段對話', async ($, on) => {
+// 2026-10-09 維護者決定：寫成文字還擋不住的才升級成守門
+test('守門：suggest 只送寫進 repo 後又被糾正、或不放進 repo 卻講了 3 次以上的規則，驗證草稿並試比對這段對話', async ($, on) => {
   const w = world(on, 1000)
   w.files.set(NOTES_PATH, [
     '# ctx-handoff 專案經驗', '', '## 記憶', '', '## 規則', '',
-    '### 推送前先跑 preflight（3 次）', '- 規則：git push 前先跑 preflight', '',
-    '### 只出現一次的規則（1 次）', '- 規則：不該送給模型',
+    '### 推送前先跑 preflight（4 次）', '- 規則：git push 前先跑 preflight', '- 專案：已在 CLAUDE.md（第 3 次時）', '',
+    '### 放進去後沒再犯（3 次）', '- 規則：不該送給模型', '- 專案：已在 CLAUDE.md（第 3 次時）', '',
+    '### 還沒處理放進 repo（5 次）', '- 規則：先走放進 repo', '',
+    '### 不放進 repo 的（3 次）', '- 規則：也該送', '- 專案：不放',
   ].join('\n'))
   w.rows.push({ role: 'assistant', text: '', toolUses: [{ tool: 'Bash', input: { command: 'git push' } }, { tool: 'Bash', input: { command: 'ls' } }] })
   ctl.distillReply = actionsReply(
@@ -49,7 +52,9 @@ test('守門：suggest 只送 3 次以上的規則，驗證草稿並試比對這
   )
   const r = await cmd($, 'guard suggest')
   expect(w.completes[0]?.system).toContain('### 推送前先跑 preflight')
-  expect(w.completes[0]?.system).not.toContain('只出現一次的規則')
+  expect(w.completes[0]?.system).toContain('### 不放進 repo 的')
+  expect(w.completes[0]?.system).not.toContain('放進去後沒再犯')
+  expect(w.completes[0]?.system).not.toContain('還沒處理放進 repo')
   const guards = w.get('guards:C--proj') as { id: number; state: string; replay: { hits: number; calls: number } }[]
   expect(guards.length).toBe(1)
   expect(guards[0]).toMatchObject({ id: 1, state: 'proposed', replay: { hits: 1, calls: 2 } })
@@ -61,8 +66,8 @@ test('守門：suggest 只送 3 次以上的規則，驗證草稿並試比對這
   expect(r.text).toContain('範例：擋「git push origin main」，放行「node cli.mjs preflight && git push」')
   // 已有守門（任何狀態）的規則不再提
   const again = await cmd($, 'guard suggest')
-  expect(again.text).toContain('沒有出現 3 次以上、還沒有守門的規則')
-  expect(w.completes.length).toBe(1)
+  expect(w.completes.length).toBe(2)
+  expect(w.completes[1]?.system).not.toContain('### 推送前先跑 preflight')
 })
 
 test('守門：/handoff guard on|mode|drop 改狀態', async ($, on) => {

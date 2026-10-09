@@ -51,6 +51,10 @@ export const PROJECT_IN = '已在 '
 export const PROJECT_DECLINED = '不放'
 export const projectOf = (r: Rule | Procedure) => r.body.find(l => l.startsWith(PROJECT_PREFIX))?.slice(PROJECT_PREFIX.length).trim()
 export const inProject = (r: Rule | Procedure) => projectOf(r)?.startsWith(PROJECT_IN) === true
+// 放進 repo 時是第幾次（「已在 CLAUDE.md（第 3 次時）」）：之後次數再增加，就是寫成文字之後使用者又糾正了，該升級成守門
+const PROMOTED_AT = /（第 (\d+) 次時）$/
+export const promotedAtOf = (r: Rule | Procedure) => { const m = PROMOTED_AT.exec(projectOf(r) ?? ''); return m ? Number(m[1]) : undefined }
+export const inProjectText = (where: string, count: number) => `${PROJECT_IN}${where}（第 ${count} 次時）`
 export function setProject(r: Rule | Procedure, value: string) {
   r.body = [...r.body.filter(l => !l.startsWith(PROJECT_PREFIX)), `${PROJECT_PREFIX}${value}`]
 }
@@ -162,9 +166,9 @@ export function contextText(notes: Notes, file: string, day: string) {
   return [
     `${NOTE_TAG} 這個工作區累積的${[full.length + titles.length ? '記憶' : '', rules.length ? '規則' : ''].filter(Boolean).join('與')}，正本在 ${file}，可以直接編輯。`,
     '這是過去對話整理出的參考；和使用者當下的指示衝突時，以使用者為準。',
-    ...(full.length ? ['', '## 使用者的偏好與修正', ...full.flatMap(m => memLines(m, false))] : []),
+    ...(full.length ? ['', '## 使用者的偏好與修正（照做，不用再問使用者）', ...full.flatMap(m => memLines(m, false))] : []),
     ...(titles.length ? ['', '## 事實與位置（只列標題；用得上時讀正本看做法與理由）', ...titles.map(m => `- ${memHead(m)}`)] : []),
-    ...(rules.length ? ['', `## 規則（出現 ${INJECT_MIN_COUNT} 次以上，依次數排序）`, ...rules.map(r => `- ${r.name}（${r.count} 次）：${ruleText(r)}`)] : []),
+    ...(rules.length ? ['', `## 規則（使用者講過 ${INJECT_MIN_COUNT} 次以上，依次數排序；次數越多代表越常被違反）`, ...rules.map(r => `- ${r.name}（${r.count} 次）：${ruleText(r)}`)] : []),
   ].join('\n')
 }
 

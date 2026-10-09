@@ -186,7 +186,7 @@ test('提醒狀態：沒附出去的 pending 會跟著使用者的下一則訊�
 })
 
 test('提醒文字：用目標語言寫，帶 [ctx-handoff] 開頭並點名語言', () => {
-  expect(reminderText('zh-TW')).toBe('[ctx-handoff] 你剛才那段說明不是繁體中文。之後的說明請用繁體中文（程式碼、指令、路徑與專有名詞維持原文）。')
+  expect(reminderText('zh-TW')).toBe('[ctx-handoff] 你剛才那段說明不是繁體中文。之後的說明請用繁體中文（程式碼、指令、路徑與專有名詞維持原文）。使用者要你寫的其他語言內容（翻譯、英文文件等）照原本的要求寫。')
   expect(reminderText('zh-CN')).toContain('简体中文')
   expect(reminderText('en')).toContain('English')
   expect(reminderText('ja')).toContain('日本語')

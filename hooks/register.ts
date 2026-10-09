@@ -5,14 +5,14 @@ import { panelTree, showSetting } from './panel'
 import type { PanelActions } from './panel'
 import { getLang, pickLang, setLang, t } from './i18n'
 import type { Lang } from './i18n'
-import { addRejected, applyActions, distillPrompt, guardPromotions, latestProgress, looksSecret, parseActions, squash } from './distill'
+import { addRejected, applyActions, distillPrompt, guardAnswers, guardPromotions, latestProgress, looksSecret, parseActions, squash } from './distill'
 import type { Action, Rejected } from './distill'
 import { progressForPrompt, progressKey, progressOffer, withOffered } from './progress'
 import type { Progress, ProgressFields } from './progress'
-import { GUARD_MIN_COUNT, applyGuardChange, guardCandidatesOf, guardChangeOf, guardHitKey, guardHits, guardListText, guardPrompt, guardSummaryText, inputText, parseGuards, withHits, withProposals } from './guards'
+import { GUARD_ASK_ITEMS, GUARD_MIN_COUNT, applyGuardChange, guardAskText, guardCandidatesOf, guardChangeOf, guardHitKey, guardHits, guardListText, guardPrompt, guardSummaryText, inputText, parseGuards, withHits, withProposals } from './guards'
 import type { Guard, GuardMode } from './guards'
 import { NOTE_TAG, PROJECT_DECLINED, PROJECT_IN, contextText, localStamp, memHead, noteBlock, parseNotes, renderNotes, tag } from './notes'
-import type { Notes } from './notes'
+import type { Notes, Rule } from './notes'
 import { encodeProject, isAbs, resolveDots, slash } from './paths'
 import { anchorOf, transcriptOf } from './transcript'
 import type { Row } from './transcript'
@@ -273,13 +273,15 @@ async function distill($: EngineInterface, why: string, queue = true, snap?: Dis
     const notes = parseNotes(original)
     // 還沒放進 repo 的規則、流程與守門：整理從對話認出放好了就記上
     const candidates = promoteCandidates(await loadGuards($), notes)
+    // 守門草稿：整理從對話認出使用者要不要採用
+    const drafts = (await loadGuards($)).filter(g => g.state === 'proposed').map(g => ({ id: `G${g.id}`, name: g.rule }))
     const started = await $.clock.now()
     const r = await $.model.complete({
       model: cfg.notesModel,
       effort: DISTILL_EFFORT,
       maxTokens: DISTILL_MAX_TOKENS,
       timeoutMs: DISTILL_TIMEOUT_MS,
-      system: distillPrompt(transcript.found ? prev?.anchor : undefined, notes, localStamp(started).slice(0, 10), progressForPrompt(await loadProgress($), started), candidates, await guidesText($)),
+      system: distillPrompt(transcript.found ? prev?.anchor : undefined, notes, localStamp(started).slice(0, 10), progressForPrompt(await loadProgress($), started), candidates, await guidesText($), drafts),
       prompt: `=== 對話紀錄 ===\n${transcript.text || '（沒有新的對話內容）'}\n=== 對話紀錄結束 ===\n\n依系統指示輸出 ACTIONS。`,
     })
     if (!r.isAnswered) {
@@ -290,7 +292,7 @@ async function distill($: EngineInterface, why: string, queue = true, snap?: Dis
     }
     const now = await $.clock.now()
     const stamp = localStamp(now)
-    const parsed = parseActions(r.text, notes, userText, candidates.map(c => c.id))
+    const parsed = parseActions(r.text, notes, userText, candidates.map(c => c.id), drafts.map(d => d.id))
     const rejected = parsed.rejected
     const actions = await checkPromotions($, parsed.actions, rejected)
     // 整理期間經驗檔被改過：編號對不上，這次不寫也不推進進度，下次重新整理同一段
@@ -304,7 +306,7 @@ async function distill($: EngineInterface, why: string, queue = true, snap?: Dis
     }
     const { notes: updated, changes: noteChanges } = applyActions(actions, notes, stamp.slice(0, 10), sid)
     if (noteChanges.length > 0) await $.fs.write(file, renderNotes(updated, stamp))
-    const changes = [...noteChanges, ...await applyPromotions($, actions, candidates, sid, started)]
+    const changes = [...noteChanges, ...await applyPromotions($, actions, candidates, sid, started), ...await applyGuardAnswers($, actions)]
     // 進度備忘（沒有實際進展時模型不輸出，前一份保留）
     const progress = latestProgress(actions)
     if (progress) await saveProgress($, sid, progress, now)
@@ -313,6 +315,8 @@ async function distill($: EngineInterface, why: string, queue = true, snap?: Dis
     const usage = describeUsage({ input: r.usage.input_tokens, cacheRead: r.usage.cache_read_input_tokens, cacheCreation: r.usage.cache_creation_input_tokens, output: r.usage.output_tokens, ms: now - started })
     await $.store.set(`distill:last:${await projectKey($)}`, { at: now, why, changes, file, usage, rejected } satisfies DistillLast)
     await stat($, 'distill.ok')
+    // 寫成文字還擋不住的規則：背景起草守門，下一段新對話請 AI 問使用者（失敗不影響整理）
+    await autoDraftGuards($, updated, rows).catch(err => $.ui.log(t().guard.autoFailed(String(err))))
     await refreshPanel($)
     $.ui.log(t().distill.doneLog(why, changes.length, rejected.count, file))
     // 先寫檔再排入；差異跟著下一則真正送進對話的訊息帶入（見 prompt.submit）
@@ -581,10 +585,8 @@ async function guardCandidates($: EngineInterface) {
   return guardCandidatesOf(notes.rules, guards)
 }
 
-async function suggestGuards($: EngineInterface) {
-  const candidates = await guardCandidates($)
-  if (candidates.length === 0) return { text: `${t().guard.noCandidates(GUARD_MIN_COUNT)}\n${await guardList($)}` }
-  const rows = (await $.session.messages()) as readonly Row[]
+// 請整理模型把規則寫成守門草稿（proposed），程式驗證格式並試比對這段對話跑過的工具呼叫
+async function draftGuards($: EngineInterface, candidates: Rule[], rows: readonly Row[]) {
   const calls = rows.flatMap(r => r.toolUses)
   const r = await $.model.complete({
     model: cfg.notesModel,
@@ -594,11 +596,21 @@ async function suggestGuards($: EngineInterface) {
     system: guardPrompt(candidates, [...new Set(calls.map(c => c.tool))]),
     prompt: '依系統指示輸出 ACTIONS。',
   })
-  if (!r.isAnswered) return { text: `${t().guard.suggestFailed(r.reason)}` }
+  if (!r.isAnswered) return { failed: r.reason }
   const { out, rejected } = parseGuards(r.text, new Set(candidates.map(c => c.name)))
   const guards = await loadGuards($)
   const added = withProposals(out, guards, calls, await $.clock.now())
   await $.store.set(await guardsKey($), [...guards, ...added])
+  return { added, rejected }
+}
+
+async function suggestGuards($: EngineInterface) {
+  const candidates = await guardCandidates($)
+  if (candidates.length === 0) return { text: `${t().guard.noCandidates(GUARD_MIN_COUNT)}\n${await guardList($)}` }
+  const d = await draftGuards($, candidates, (await $.session.messages()) as readonly Row[])
+  if ('failed' in d) return { text: `${t().guard.suggestFailed(String(d.failed))}` }
+  const { added, rejected } = d
+  await markTried($, candidates)
   return {
     text: [
       `${t().guard.suggested(candidates.length, added.length)}`,
@@ -607,6 +619,56 @@ async function suggestGuards($: EngineInterface) {
       await guardList($),
     ].join('\n'),
   }
+}
+
+// 起草過的規則記下當時的次數（guardTried:<工作區>）：模型判斷寫不成守門的，次數沒再增加就不重試
+const triedKey = async ($: EngineInterface) => `guardTried:${await projectKey($)}`
+async function markTried($: EngineInterface, rules: Rule[]) {
+  const tried = ((await $.store.get(await triedKey($))) as Record<string, number> | undefined) ?? {}
+  for (const r of rules) tried[r.name] = r.count
+  await $.store.set(await triedKey($), tried)
+}
+
+// 整理完自動起草：只送還沒起草過、或起草後又被糾正（次數增加）的候選
+async function autoDraftGuards($: EngineInterface, notes: Notes, rows: readonly Row[]) {
+  const tried = ((await $.store.get(await triedKey($))) as Record<string, number> | undefined) ?? {}
+  const candidates = guardCandidatesOf(notes.rules, await loadGuards($)).filter(r => tried[r.name] !== r.count)
+  if (candidates.length === 0) return
+  const d = await draftGuards($, candidates, rows)
+  if ('failed' in d) { $.ui.log(t().guard.autoFailed(String(d.failed))); return }
+  await markTried($, candidates)
+  if (d.added.length > 0) $.ui.log(t().guard.autoDrafted(d.added.length))
+}
+
+// 使用者在對話裡對草稿的回答（整理認出、附原話）：要就啟用，不要就停用（留著，不再提議同一條規則）；收回對應的詢問
+async function applyGuardAnswers($: EngineInterface, actions: Action[]) {
+  const answers = guardAnswers(actions)
+  if (answers.length === 0) return []
+  const guards = await loadGuards($)
+  const changes: string[] = []
+  for (const a of answers) {
+    const g = guards.find(x => x.id === a.id && x.state === 'proposed')
+    if (!g) continue
+    g.state = a.approve ? 'on' : 'off'
+    changes.push(a.approve ? t().change.guardApproved(g.id, g.rule) : t().change.guardDeclined(g.id, g.rule))
+  }
+  await $.store.set(await guardsKey($), guards)
+  const asked = await loadAsked($)
+  for (const a of answers) delete asked[`q:${a.id}`]
+  await $.store.set(await promoteKey($), asked)
+  return changes
+}
+
+// 新對話開頭請 AI 問使用者要不要採用的草稿：交給別段對話還沒收回的不問（和放進專案共用交代紀錄，鍵 q:<編號>）
+async function guardAskBlock($: EngineInterface, notes: Notes) {
+  const asked = await loadAsked($)
+  const drafts = (await loadGuards($)).filter(g => g.state === 'proposed' && asked[`q:${g.id}`] === undefined).slice(0, GUARD_ASK_ITEMS)
+  if (drafts.length === 0) return undefined
+  const sid = await $.session.id()
+  const now = await $.clock.now()
+  for (const g of drafts) asked[`q:${g.id}`] = { sid, at: now }
+  await $.store.set(await promoteKey($), asked)
+  return guardAskText(drafts.map(g => ({ guard: g, rule: notes.rules.find(r => r.name === g.rule) })))
 }
 
 // 顯示用：併上統計裡的命中次數
@@ -1038,11 +1100,13 @@ export const register: Register = on => {
       const notes = parseNotes(await readText($, file))
       const text = contextText(notes, file, localStamp(await $.clock.now()).slice(0, 10))
       const promote = await promoteBlock($, notes)
+      const guardAsk = await guardAskBlock($, notes).catch(() => undefined)
       // 進度備忘出錯不影響經驗與放進專案的交代
       const progress = await progressBlock($).catch(() => undefined)
       const blocks = [
         ...(text ? [{ name: 'ctxHandoffProject', text }] : []),
         ...(promote ? [{ name: 'ctxHandoffPromote', text: promote }] : []),
+        ...(guardAsk ? [{ name: 'ctxHandoffGuardAsk', text: guardAsk }] : []),
         ...(progress ? [{ name: 'ctxHandoffProgress', text: progress }] : []),
       ]
       return blocks.length ? { ...out, blocks: [...out.blocks, ...blocks] } : out

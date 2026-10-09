@@ -50,7 +50,7 @@ Short messages to Claude, never a block on your tools. All on by default.
 
 ### Guards
 
-Once a rule has come up 3 times, `/handoff guard suggest` drafts a check on tool calls from it, such as "git push without running tests", set to block or to remind. **Nothing applies until you approve it.** If a check itself fails, the call goes through.
+A guard is for a rule that writing down didn't fix: one that went into your repo and you had to correct again, or one you kept out of the repo but have said 3 times. ctx-handoff drafts a check on tool calls from it in the background, such as "git push without running tests", set to block or to remind. The next conversation has Claude, after finishing what you asked, ask you in a sentence or two whether to use it. Say yes or no in the conversation; the next notes update records your answer, so there's nothing to click. If you don't answer, a later conversation asks again. **Nothing applies until you say yes** (or turn it on in the panel or with `/handoff guard on N`). `/handoff guard suggest` drafts on demand. If a check itself fails, the call goes through.
 
 ### Panel
 
