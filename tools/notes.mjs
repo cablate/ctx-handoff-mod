@@ -11,6 +11,7 @@
 //   { "file": "...", "mem": "...", "op": "append", "text": "接在句尾的補充" }
 //   { "file": "...", "rule": "標題片段", "op": "delete" | "oneLine", "text": "單行規則（oneLine 用）" }
 //   { "file": "...", "rule": "標題片段", "op": "appendBody", "text": "- 補充：…" }
+//   { "file": "...", "rule": "標題片段", "op": "project", "text": "已在 CLAUDE.md（第 3 次時）" }   換掉「- 專案：」那一行
 //   { "file": "...", "proc": "流程標題片段", "op": "delete" }
 //   { "file": "...", "mem" 或 "rule": "...", "op": "moveTo", "to": "另一個專案" }
 // 每項都必須恰好比對到一條；任何一項不符就整批不寫。寫入前再讀一次，期間被改過就中止。
@@ -71,6 +72,8 @@ if (cmd === 'list') {
       if (o.op === 'delete') d.notes.rules[i] = undefined
       else if (o.op === 'oneLine') r.body = [`- 規則：${o.text}`]
       else if (o.op === 'appendBody') r.body.push(o.text)
+      // 換掉「- 專案：」那一行（例如補上放進 repo 時是第幾次）
+      else if (o.op === 'project') r.body = [...r.body.filter(l => !l.startsWith('- 專案：')), `- 專案：${o.text}`]
       else if (o.op === 'moveTo') {
         const t = doc(o.to)
         const same = t.notes.rules.find(x => x && x.name === r.name)

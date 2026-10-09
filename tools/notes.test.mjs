@@ -75,3 +75,13 @@ test('流程：沒有變動的套用原樣輸出；list 列出流程；刪除流
   assert.equal(read('P'), P.replace('### 備份（1 次）\n- 時機：每週\n\n', ''))
   assert.match(r.stdout, /流程 2 → 1/)
 })
+
+// 2026-10-09：守門升級要知道規則放進 repo 時是第幾次，舊條目沒記，要補
+test('規則的 project：換掉「- 專案：」那一行；沒有就加上', () => {
+  const { run, read } = setup()
+  const r = run([{ file: 'B', rule: '規則一', op: 'project', text: '已在 CLAUDE.md（第 3 次時）' }], true)
+  assert.equal(r.status, 0, r.stderr)
+  assert.ok(read('B').includes('### 規則一（3 次）\n- 規則：做 X\n- 專案：已在 CLAUDE.md（第 3 次時）\n'))
+  run([{ file: 'B', rule: '規則一', op: 'project', text: '不放' }], true)
+  assert.ok(read('B').includes('- 規則：做 X\n- 專案：不放\n') && !read('B').includes('已在 CLAUDE.md'))
+})
