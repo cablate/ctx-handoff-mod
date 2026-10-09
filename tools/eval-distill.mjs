@@ -16,7 +16,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { execFileSync } from 'node:child_process'
 import { register } from 'node:module'
 import { pathToFileURL } from 'node:url'
-import { EVAL_ROOT, argsOf, claudeWith, parseVerdict, pool, readRows, resultText, saveRun as saveRunIn, textOf } from './eval-lib.mjs'
+import { EVAL_MODEL, EVAL_ROOT, argsOf, claudeWith, parseVerdict, pool, readRows, resultText, saveRun as saveRunIn, textOf } from './eval-lib.mjs'
 import { claudeDir } from './lib.mjs'
 
 register('./ts-resolve.mjs', import.meta.url)
@@ -28,7 +28,9 @@ const args = process.argv.slice(2)
 const cmd = args[0]
 const { opt, flag } = argsOf(args)
 const saveRun = (kind, info) => saveRunIn(DIR, kind, info)
-const MODEL = 'claude-sonnet-5-5'
+const MODEL = opt('model', EVAL_MODEL)
+// mod 的整理用 effort low；Haiku 不設 effort，換成 Sonnet 等模型時用 --effort low 對齊
+const EFFORT = opt('effort', undefined)
 const PREFIX = /^The ctx-handoff plugin sent a message:\s*/
 
 // mod 的模組（整理提示、驗證、套用、對話轉文字）：比不同版本的提示時指向不同的 hooks 資料夾
@@ -151,7 +153,7 @@ const onlyOf = () => (opt('only', '') ?? '').split(',').filter(Boolean)
 const gitHead = dir => { try { return execFileSync('git', ['-C', dir, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim() } catch { return undefined } }
 const gitDirty = dir => { try { return execFileSync('git', ['-C', dir, 'status', '--porcelain', '--', '.'], { encoding: 'utf8' }).trim().length > 0 } catch { return undefined } }
 
-// 和 register.ts 的整理一樣：同樣的系統提示、同樣的對話格式、notes_model（Sonnet 5.5）effort low，程式驗證與套用
+// 和 register.ts 的整理一樣：同樣的系統提示、同樣的對話格式、程式驗證與套用；模型預設 Haiku（測提示，不測模型）
 async function run() {
   const label = opt('label', '')
   if (!label) { console.log('run 要 --label'); return }
@@ -160,7 +162,7 @@ async function run() {
   const outDir = `${DIR}/out/${label}`
   mkdirSync(outDir, { recursive: true })
   const ids = caseIds(onlyOf()).filter(id => flag('redo') || !existsSync(`${outDir}/${id}.json`))
-  saveRun('run', { label, hooks, commit: gitHead(hooks), dirty: gitDirty(hooks), model: MODEL, effort: 'low', ids })
+  saveRun('run', { label, hooks, commit: gitHead(hooks), dirty: gitDirty(hooks), model: MODEL, effort: EFFORT, ids })
   console.log(`整理 ${ids.length} 題（${hooks}）→ ${outDir}`)
   let cost = 0
   await pool(ids, Number(opt('jobs', 3)), async id => {
@@ -170,7 +172,7 @@ async function run() {
     const system = mod.distill.distillPrompt(c.anchor, notes, c.day, undefined, [], guidesOf(c))
     const input = `=== 對話紀錄 ===\n${c.transcript || '（沒有新的對話內容）'}\n=== 對話紀錄結束 ===\n\n依系統指示輸出 ACTIONS。`
     try {
-      const r = await claudeWith(DIR, { model: MODEL, system, input, effort: 'low' })
+      const r = await claudeWith(DIR, { model: MODEL, system, input, effort: EFFORT })
       cost += r.total_cost_usd ?? 0
       const parsed = mod.distill.parseActions(r.result ?? '', notes, c.userText, [])
       const { changes } = mod.distill.applyActions(parsed.actions, notes, c.day, c.sid)

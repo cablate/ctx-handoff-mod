@@ -4,6 +4,10 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { claudeDir } from './lib.mjs'
 
+// 評估一律用 Haiku：測的是提示詞與流程，不是模型（維護者 2026-10-09 決定；第一次評估用 Opus 重產交接摘要、
+// Sonnet 評審，碰到方案用量上限）。要換模型用各工具的 --model
+export const EVAL_MODEL = 'claude-haiku-4-5-20251001'
+
 export const EVAL_ROOT = `${claudeDir()}/ctx-handoff-eval`
 
 export const readRows = file => readFileSync(file, 'utf8').split('\n').flatMap(l => { try { return l ? [JSON.parse(l)] : [] } catch { return [] } })

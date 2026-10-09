@@ -13,7 +13,7 @@
 // 每一輪的設定（指令、模型、提示全文、題目）存在 runs/；結果與題目都不刪，數字與結論記在 docs/eval-log.md。
 // 評審用 claude -p：不帶工具、不接 MCP、不讀使用者設定（不載入 ctx-handoff，也不寫它的 store），在空資料夾執行。
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { BASE, EVAL_ROOT, claudeWith, parseVerdict, readRows, resultText, runClaude, saveRun as saveRunIn, textOf } from './eval-lib.mjs'
+import { BASE, EVAL_MODEL, EVAL_ROOT, claudeWith, parseVerdict, readRows, resultText, runClaude, saveRun as saveRunIn, textOf } from './eval-lib.mjs'
 import { claudeDir } from './lib.mjs'
 
 const C = claudeDir()
@@ -150,7 +150,7 @@ const saveRun = (kind, info) => saveRunIn(DIR, kind, info)
 
 async function judge() {
   const label = opt('label', 'baseline')
-  const model = opt('model', 'claude-sonnet-5-5')
+  const model = opt('model', EVAL_MODEL)
   const only = opt('only', '')?.split(',').filter(Boolean)
   const jobs = Number(opt('jobs', 3))
   const from = opt('handoffs', '')
@@ -189,13 +189,15 @@ async function regen() {
   const promptFile = opt('prompt-file', '')
   if (!label || !promptFile) { console.log('regen 要 --label 與 --prompt-file'); return }
   const prompt = readFileSync(promptFile, 'utf8')
+  // 真實交接用主對話的模型，但評估比的是提示詞：預設 Haiku，兩版用同一個模型就公平
+  const model = opt('model', EVAL_MODEL)
   const only = opt('only', '')?.split(',').filter(Boolean)
   const jobs = Number(opt('jobs', 2))
   const outDir = `${DIR}/regen/${label}`
   mkdirSync(outDir, { recursive: true })
   const cases = readdirSync(`${DIR}/cases`).map(f => JSON.parse(readFileSync(`${DIR}/cases/${f}`, 'utf8')))
     .filter(c => (only.length === 0 || only.includes(c.id)) && c.before?.cwd && (flag('redo') || !existsSync(`${outDir}/${c.id}.json`)))
-  saveRun('regen', { label, prompt, ids: cases.map(c => c.id) })
+  saveRun('regen', { label, model, prompt, ids: cases.map(c => c.id) })
   console.log(`重新產生 ${cases.length} 份（同時 ${jobs} 個）→ ${outDir}`)
   let cost = 0
   const queue = [...cases]
@@ -203,11 +205,11 @@ async function regen() {
     for (let c = queue.shift(); c !== undefined; c = queue.shift()) {
       const b = c.before
       try {
-        const r = await runClaude([...BASE, '--setting-sources', 'local', '--model', b.model, '--resume', b.sessionId, '--fork-session', '--max-turns', '1'], b.cwd, prompt)
+        const r = await runClaude([...BASE, '--setting-sources', 'local', '--model', model, '--resume', b.sessionId, '--fork-session', '--max-turns', '1'], b.cwd, prompt)
         cost += r.total_cost_usd ?? 0
         // 接續舊 session 時 --tools 不一定生效（2026-10-09 實測模型查了網路）：只收一輪就寫完的
         if (r.num_turns !== 1 || r.subtype !== 'success') throw new Error(`不是一輪寫完（${r.subtype}，${r.num_turns} 輪，$${(r.total_cost_usd ?? 0).toFixed(2)}）`)
-        writeFileSync(`${outDir}/${c.id}.json`, JSON.stringify({ id: c.id, model: b.model, ctx: b.ctx, cost: r.total_cost_usd, usage: r.modelUsage, text: r.result ?? '' }, null, 2))
+        writeFileSync(`${outDir}/${c.id}.json`, JSON.stringify({ id: c.id, model, ctx: b.ctx, cost: r.total_cost_usd, usage: r.modelUsage, text: r.result ?? '' }, null, 2))
         console.log(`${c.id}	${Math.round(b.ctx / 1000)}k → ${(r.result ?? '').length} 字	${(r.total_cost_usd ?? 0).toFixed(2)}`)
       } catch (err) {
         console.log(`${c.id}	失敗：${String(err).slice(0, 300)}`)
@@ -268,7 +270,7 @@ const compareInput = (c, a, b) => `=== 摘要 A ===\n${a}\n=== 摘要 A 結束 =
 async function compare() {
   const [x, y] = (opt('pair', '') ?? '').split(',')
   if (!x || !y) { console.log('compare 要 --pair X,Y（regen 的兩個 label）'); return }
-  const model = opt('model', 'claude-sonnet-5-5')
+  const model = opt('model', EVAL_MODEL)
   const only = opt('only', '')?.split(',').filter(Boolean)
   const jobs = Number(opt('jobs', 4))
   const outDir = `${DIR}/compare/${x}-vs-${y}`
