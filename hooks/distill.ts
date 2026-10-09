@@ -1,6 +1,6 @@
 // 背景整理：給整理模型的提示、模型輸出的 JSON 動作（驗證、套用）與金鑰檢查（純函式，不碰 $）
 import { t } from './i18n'
-import { PROGRESS_FIELD_MAX, PROGRESS_FILES_MAX, PROGRESS_FILE_MAX, PROGRESS_TASK_MAX, PROGRESS_TOTAL_MAX, isProgressState, progressSize } from './progress'
+import { PROGRESS_TOTAL_MAX, isProgressState, progressSize } from './progress'
 import type { ProgressFields } from './progress'
 import { EVIDENCE_KEEP, NOTE_TAG, PROJECT_DECLINED, PROJECT_IN, STALE_DAYS, inProject, isArchived, memHead, memOneLine, procBody, procOneLine, procRest, procSteps, procWhen, projectOf, ruleText, setProject, tag } from './notes'
 import type { Change, Memory, Notes, Procedure, Rule } from './notes'
@@ -25,7 +25,7 @@ const QUOTE_TYPES = ['user', 'feedback']
 // 整理提示：這個工作區現有的記憶與規則（編號只在這次有效）
 // progress：目前存著的進度（已轉成一行文字），讓模型接著更新而不是從片段猜
 // pending：還沒放進 repo 的規則、流程與守門（編號 R／P 同上面的清單，守門是 G＋守門編號）
-export function distillPrompt(anchor: string | undefined, notes: Notes, day: string, progress = '（無）', pending: { id: string; name: string }[] = []) {
+export function distillPrompt(anchor: string | undefined, notes: Notes, day: string, progress = '（無）', pending: { id: string; name: string }[] = [], guides = '') {
   const mem = notes.memory.length
     ? notes.memory.map((m, i) => `M${i + 1} ${memOneLine(m)}${isArchived(m, day) ? `（已封存：超過 ${STALE_DAYS} 天沒被證實）` : ''}`)
     : ['（無）']
@@ -49,29 +49,36 @@ export function distillPrompt(anchor: string | undefined, notes: Notes, day: str
     '',
     '目前的流程：', ...procs,
     '',
-    '一、記憶：之後的工作值得記住、已經被證實的事。人會在面板上只看標題，要一眼看懂。',
-    '類型：user（使用者偏好與工作方式）、feedback（使用者修正過、或確認可行的做法）、project（無法從程式碼或 git 推導出的決定、限制與理由）、reference（外部資訊在哪裡）。',
+    '已有的指引（專案與使用者的 CLAUDE.md；新對話本來就會讀到）：',
+    guides.trim() || '（無）',
+    '',
+    '一、記憶：之後的工作值得記住、已經被證實的事，目的是使用者同樣的話不用講第二次。人會在面板上只看標題，要一眼看懂。',
+    '類型：user（使用者的偏好、工作方式與溝通方式）、feedback（使用者糾正過的做法）、project（決定與理由、限制、踩過的坑）、reference（外部資訊在哪裡）。',
     `- title：一句結論，40 字以內（超過 ${TITLE_MAX} 字整條丟掉），只看這行就知道要做什麼或要知道什麼；不寫背景故事、日期、PR 編號、原話`,
     `- how（做法）、why（理由）：各一句、${FIELD_MAX} 字以內，可省略；不寫故事、原話、進度`,
     `- evidence（根據）：發生了什麼、在哪裡驗證過（${EVIDENCE_MAX} 字以內），給之後整理判斷用；日期與 session 由程式補上，不用寫`,
     '- 一條只講一件事：一段對話學到三件事就寫三條',
-    '- user、feedback 一定要附 quote：使用者在對話裡的原話，照抄（可用 … 省略中間），程式會比對使用者訊息；找不到原話就表示不是使用者說的，改成 project 或 reference，或不要寫。助理自己的做法不是使用者要求',
-    '不收：能從程式碼推導的、CLAUDE.md 已有的、進度和待辦、會過時的狀態、這次改了哪些程式、推測、任何金鑰或憑證。',
-    '自問：一個月後在這個工作區開新對話，這條還正確、還用得上嗎？',
+    '要收：使用者明講的偏好、要求、糾正與溝通方式（例如不耐煩冗長的過程、可逆的事直接做）；有理由的決定，就算已經寫進程式也要收，因為理由與「為什麼這樣定」從程式碼看不出來；以後會再用到、從程式碼看不出來的事實與坑。',
+    '不收：進度和待辦、這次改了哪些程式、只跟眼前這件工作有關的決定（例如這次先用哪個樣式、某個 PR 先放著；寫進 set_progress 的 decisions）、某次實驗的數字、推測、任何金鑰或憑證、上面「已有的指引」已經寫過的事。',
+    '「已有的指引」寫過、AI 卻又違反而被使用者糾正：不要新增記憶，用 add_rule 或 confirm_rule 記下這次再犯（次數累積後程式會建議做成守門）。',
+    '- user、feedback 只收使用者自己說出的要求或糾正，一定要附 quote：使用者在對話裡的原話，照抄（可用 … 省略中間），程式會比對使用者訊息。助理提出、使用者只回「好」「可以」「定案」的，是決定，寫成 project（evidence 寫使用者同意），不是使用者的要求；使用者的提問或抱怨也不要改寫成規則。',
+    '自問：一個月後在這個工作區開新對話，這條還正確、還用得上嗎？只跟這件工作有關的，答案是否定的。',
     '和現有記憶比對：意思相同就不動；補充或修正就 update_memory；被推翻就 delete_memory；優先 update_memory，不要寫出換句話說的重複條目。',
-    '同一件事在這段對話又被證實（又用上、使用者再次確認，或工具結果證明），用 confirm_memory 加一筆根據；已封存的被證實就會恢復帶入。',
+    'confirm_memory（加一筆根據）依類型判斷：',
+    '- user、feedback：只有使用者在這段對話又說了一次，或 AI 又犯而被使用者糾正，才 confirm。AI 照著這條做、使用者沒說話，不算。',
+    '- project、reference：這段對話實際用到，而且證實仍然正確（照著路徑找到檔案、照著指令跑成功、決定仍被沿用），就 confirm；只是提到不算。已封存的被證實就會恢復帶入。',
     `project、reference 超過 ${STALE_DAYS} 天沒被證實會自動封存；不要因為條數多而刪除，只在被推翻或重複時刪除或合併。`,
     '',
     '二、規則：可重用的做法，寫成可以直接採用的指令。',
     `name 是一句話的標題（${RULE_NAME_MAX} 字以內）；rule 寫做法（${RULE_TEXT_MAX} 字以內），步驟多時指向工具或文件，不要把整份清單塞進來。`,
     '只收三段都有的：問題或摩擦 → 實際行動 → 觀察到的結果。',
-    '同一個教訓再次被證實（使用者確認，或工具結果證明有效），就用 confirm_rule 增加出現次數，不要新增。',
+    '出現次數代表「使用者講了幾次」：使用者在這段對話又提一次，或 AI 又犯而被使用者糾正，才用 confirm_rule 增加次數，不要新增。AI 照著做而且有效、使用者沒說話，不加次數。',
     '',
-    '三、進度（set_progress）：這個工作區「現在停在哪」，給之後新開的對話接續用；不是記憶，不會寫進經驗檔。',
+    '三、進度（set_progress）：這個工作區「現在停在哪」，給之後新開的對話接續用；不是記憶，不會寫進經驗檔，工作做完就沒用。',
     '目前的進度：' + progress,
-    `- 附上的對話有實際的工作進展（改了東西、跑了驗證、做了決定、遇到阻礙）才輸出一行 set_progress；只是閒聊、提問、查資料就不輸出，前一份進度會保留。每次最多一行，整份取代舊的。`,
-    `- task：目前的任務，一句話（${PROGRESS_TASK_MAX} 字內）；state：done、in_progress、blocked 三選一；verified：最後一次實際驗證的結果，寫跑了什麼、結果如何（${PROGRESS_FIELD_MAX} 字內），沒驗證過就省略，不要猜；next：下一步，只寫一個動作（${PROGRESS_FIELD_MAX} 字內，done 可省略）；files：最相關的檔案路徑，最多 ${PROGRESS_FILES_MAX} 個。`,
-    `- 全部加起來不超過 ${PROGRESS_TOTAL_MAX} 字，超過整行丟掉。`,
+    '- 附上的對話有實際的工作進展（改了東西、跑了驗證、做了決定、遇到阻礙）才輸出一行 set_progress；只是閒聊、提問、查資料就不輸出，前一份進度會保留。每次最多一行，整份取代舊的，所以前一份裡還有效的內容要帶過來。',
+    '- task：目前的任務；state：done、in_progress、blocked 三選一；verified：最後一次實際驗證的結果，寫跑了什麼、結果如何，沒驗證過就省略，不要猜；next：下一步，一個具體動作（done 可省略）；decisions：這件工作做完前要記得的決定與使用者的指示，每項一句；files：最相關的檔案路徑。',
+    '- 寫到接手的人看得懂就好，不要寫成長篇或流水帳。',
     '四、流程：使用者在這個工作區讓 AI 重複做的多步驟固定做法，例如「發版：改版本號 → 更新 CHANGELOG → 打 tag → 建立 GitHub release」。累積夠多次後，程式會請 AI 把它做成專案的 skill。',
     `name 是一句話的標題（${PROC_NAME_MAX} 字以內）；when 一句話說明什麼時候用（${FIELD_MAX} 字以內）；steps 是 ${STEP_MIN} 到 ${STEP_MAX_COUNT} 步的字串陣列，照實際順序，每步一行短句（${STEP_MAX} 字以內），保留指令與檔名。`,
     '要很保守：只收同一種工作在這段對話裡被做了不只一次、或使用者明說「以後都照這個流程」，而且至少有 3 個步驟的固定做法。單一規則、偏好、一次性的任務、只是同一種工具呼叫重複，都不是流程（規則寫成規則，偏好寫成記憶）。',
@@ -92,7 +99,7 @@ export function distillPrompt(anchor: string | undefined, notes: Notes, day: str
     '{"op":"confirm_rule","id":"R2","evidence":"…"}',
     '{"op":"update_rule","id":"R2","rule":"…"}',
     '{"op":"delete_rule","id":"R4","reason":"…"}',
-    '{"op":"set_progress","task":"…","state":"in_progress","verified":"…","next":"…","files":["…"]}',
+    '{"op":"set_progress","task":"…","state":"in_progress","verified":"…","next":"…","decisions":["…"],"files":["…"]}',
     '{"op":"add_procedure","name":"…","when":"…","steps":["…","…","…"],"evidence":"…"}',
     '{"op":"confirm_procedure","id":"P1","evidence":"…"}',
     '{"op":"update_procedure","id":"P1","when":"…可省略","steps":["…","…","…"]}',
@@ -235,14 +242,14 @@ function toAction(o: Record<string, unknown>, notes: Notes, userText: string, pe
       const [task, verified, next] = [o.task, o.verified, o.next].map(str)
       const state = isProgressState(o.state) ? o.state : undefined
       if (o.files !== undefined && !Array.isArray(o.files)) return t().reject.badFiles
+      if (o.decisions !== undefined && !Array.isArray(o.decisions)) return t().reject.badList('decisions')
       const files = ((o.files as unknown[] | undefined) ?? []).map(str).filter((f): f is string => f !== undefined)
+      const decisions = ((o.decisions as unknown[] | undefined) ?? []).map(str).filter((d): d is string => d !== undefined)
       // done 不一定有下一步，其餘狀態都要
       const bad = (state ? undefined : t().reject.badState(String(o.state)))
         ?? missing({ task, ...(state === 'done' ? {} : { next }) })
-        ?? tooLong({ task: [task, PROGRESS_TASK_MAX], verified: [verified, PROGRESS_FIELD_MAX], next: [next, PROGRESS_FIELD_MAX], ...Object.fromEntries(files.map((f, i): [string, [string, number]] => [`files[${i}]`, [f, PROGRESS_FILE_MAX]])) })
-        ?? (files.length > PROGRESS_FILES_MAX ? t().reject.tooMany('files', PROGRESS_FILES_MAX) : undefined)
       if (bad) return bad
-      const p: ProgressFields = { task: task!, state: state!, ...(verified ? { verified } : {}), ...(next ? { next } : {}), files }
+      const p: ProgressFields = { task: task!, state: state!, ...(verified ? { verified } : {}), ...(next ? { next } : {}), ...(decisions.length ? { decisions } : {}), files }
       return progressSize(p) > PROGRESS_TOTAL_MAX ? t().reject.overTotal(PROGRESS_TOTAL_MAX) : { op: 'set_progress', ...p }
     }
     case 'add_procedure': {
@@ -353,7 +360,7 @@ export const guardPromotions = (actions: Action[]) => actions.flatMap(a =>
 // 這批動作裡最後一個有效的 set_progress（進度不屬於經驗檔，不經過 applyActions）
 export function latestProgress(actions: Action[]): ProgressFields | undefined {
   const a = actions.findLast((x): x is Extract<Action, { op: 'set_progress' }> => x.op === 'set_progress')
-  return a && { task: a.task, state: a.state, ...(a.verified ? { verified: a.verified } : {}), ...(a.next ? { next: a.next } : {}), files: a.files }
+  return a && { task: a.task, state: a.state, ...(a.verified ? { verified: a.verified } : {}), ...(a.next ? { next: a.next } : {}), ...(a.decisions?.length ? { decisions: a.decisions } : {}), files: a.files }
 }
 
 // 依序套用已驗證的動作；刪除先標記成 undefined，編號不會因此位移

@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { latestProgress, parseActions } from './distill'
 import { parseNotes } from './notes'
-import { agoText, progressOffer } from './progress'
+import { PROGRESS_TOTAL_MAX, agoText, progressOffer } from './progress'
 import type { Progress } from './progress'
 import { DAY, NOTE_TAG, NOTES, actionsReply, cmd, ctl, distillNow, say, stop, world } from './test-world'
 
@@ -34,7 +34,7 @@ test('set_progress：有效的收下；done 可以沒有下一步；同一批取
   expect(latestProgress(parse().actions)).toBeUndefined()
 })
 
-test('set_progress：缺欄位、狀態無效、太長、檔案太多、總長超過、疑似金鑰都整行丟棄', () => {
+test('set_progress：缺欄位、狀態無效、files 或 decisions 不是清單、疑似金鑰都整行丟棄', () => {
   const bad = (o: object) => {
     const r = parse({ ...PROGRESS, ...o })
     expect(latestProgress(r.actions)).toBeUndefined()
@@ -43,24 +43,20 @@ test('set_progress：缺欄位、狀態無效、太長、檔案太多、總長�
   expect(bad({ task: undefined }).count).toBe(1)
   expect(bad({ next: undefined }).count).toBe(1)
   expect(bad({ state: 'finished' }).samples[0]).toContain('finished')
-  expect(bad({ task: 'x'.repeat(81) }).samples[0]).toContain('task')
-  expect(bad({ verified: 'x'.repeat(121) }).count).toBe(1)
-  expect(bad({ next: 'x'.repeat(121) }).count).toBe(1)
-  expect(bad({ files: ['a', 'b', 'c', 'd', 'e', 'f'] }).samples[0]).toContain('files')
-  expect(bad({ files: ['x'.repeat(81)] }).count).toBe(1)
   expect(bad({ files: 'src/a.ts' }).samples[0]).toContain('files')
+  expect(bad({ decisions: '先用 build 樣式' }).samples[0]).toContain('decisions')
   expect(bad({ task: '改 api_key=abc123 的讀法' }).samples[0]).not.toContain('abc123')
 })
 
-test('set_progress：每個欄位都沒超過但加起來超過 600 字才丟棄，剛好 600 字收下', () => {
-  const full = { task: 'a'.repeat(80), verified: 'b'.repeat(120), next: 'c'.repeat(120) }
-  const atLimit = parse({ ...PROGRESS, ...full, files: ['d'.repeat(80), 'e'.repeat(80), 'f'.repeat(80), 'g'.repeat(40)] })
-  expect(atLimit.rejected.count).toBe(0)
-  expect(latestProgress(atLimit.actions)?.files.length).toBe(4)
-  const over = parse({ ...PROGRESS, ...full, files: ['d'.repeat(80), 'e'.repeat(80), 'f'.repeat(80), 'g'.repeat(41)] })
-  expect(over.rejected.count).toBe(1)
-  expect(over.rejected.samples[0]).toContain('600')
-  expect(latestProgress(over.actions)).toBeUndefined()
+// 2026-10-09 維護者決定放寬：每欄 80–120 字、整份 600 字會擠掉內容；只留防失控的整份上限
+test('set_progress：欄位不再各自設上限，只有整份超過防失控的上限才丟棄；這件工作的決定一起帶', () => {
+  const long = { task: 'a'.repeat(300), verified: 'b'.repeat(800), next: 'c'.repeat(300), decisions: ['先用 build 樣式', 'PR #817 先放著'], files: Array.from({ length: 12 }, (_, i) => `src/f${i}.ts`) }
+  const ok = parse({ ...PROGRESS, ...long })
+  expect(ok.rejected.count).toBe(0)
+  expect(latestProgress(ok.actions)?.decisions).toEqual(['先用 build 樣式', 'PR #817 先放著'])
+  const over = parse({ ...PROGRESS, verified: 'x'.repeat(PROGRESS_TOTAL_MAX) })
+  expect(over.rejected.samples[0]).toContain(String(PROGRESS_TOTAL_MAX))
+  expect(progressOffer({ ...OLD, decisions: ['先用 build 樣式'] }, 'S1', HOUR)).toContain('這件工作的決定：先用 build 樣式')
 })
 
 test('提供的條件：不同 session、24 小時內、沒交接、還沒提供過', () => {
@@ -264,4 +260,21 @@ test('/handoff 狀態：顯示最近一份進度（時間與任務）；沒有�
   expect(line).toContain('修好登入頁的逾時（進行中）')
   expect(line).not.toContain('resume_hint')
   expect(w.get(KEY)).toBeDefined()
+})
+
+// 2026-10-09 評估：整理看不到 CLAUDE.md 時，常把裡面已有的事又記一次
+test('整理提示：附上工作區與使用者的 CLAUDE.md，讓整理知道哪些不用再記', async ($, on) => {
+  const w = world(on, 100_000, 1_000_000, {}, [], 5)
+  w.files.set('C:/proj/CLAUDE.md', '# 專案指引\n- 推送前先跑 check')
+  w.files.set('C:/Users/u/.claude/CLAUDE.md', '# 全域\n- Bash 會吃掉反斜線')
+  await distillNow($)
+  const system = w.completes[0]?.system ?? ''
+  expect(system).toContain('--- 工作區：C:/proj/CLAUDE.md ---\n# 專案指引\n- 推送前先跑 check')
+  expect(system).toContain('--- 使用者：C:/Users/u/.claude/CLAUDE.md ---\n# 全域\n- Bash 會吃掉反斜線')
+})
+
+test('整理提示：沒有 CLAUDE.md 就寫（無）', async ($, on) => {
+  const w = world(on, 100_000, 1_000_000, {}, [], 5)
+  await distillNow($)
+  expect(w.completes[0]?.system).toContain('已有的指引（專案與使用者的 CLAUDE.md；新對話本來就會讀到）：\n（無）')
 })

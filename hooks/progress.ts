@@ -8,16 +8,14 @@ const STATE_LABEL: Record<ProgressState, string> = { done: '完成', in_progress
 
 // 超過這麼久的進度不再提供（對話已經隔了一天以上，狀態多半變了）
 export const PROGRESS_MAX_AGE_MS = 24 * 60 * 60_000
-// 每個欄位與整份的字數上限（中英文都算一個字）；整份加總不超過 PROGRESS_TOTAL_MAX
-export const PROGRESS_TASK_MAX = 80
-export const PROGRESS_FIELD_MAX = 120
-export const PROGRESS_FILES_MAX = 5
-export const PROGRESS_FILE_MAX = 80
-export const PROGRESS_TOTAL_MAX = 600
+// 整份的字數只設防失控的上限（中英文都算一個字），不拿來控制寫多少：維護者 2026-10-09 決定放寬
+// （原本每欄 80–120 字、整份 600 字），只跟眼前工作有關的決定也改由進度備忘帶（decisions）
+export const PROGRESS_TOTAL_MAX = 4000
 // 記下「提供給哪幾段對話了」最多留幾筆
 const OFFERED_KEEP = 5
 
-export type ProgressFields = { task: string; state: ProgressState; verified?: string; next?: string; files: string[] }
+// decisions：這件工作做完前要記得的決定（例如這次先用哪個樣式、某個 PR 先放著）；工作做完就沒用，所以不進經驗檔
+export type ProgressFields = { task: string; state: ProgressState; verified?: string; next?: string; decisions?: string[]; files: string[] }
 // sid：產生它的 session；handed：這個 session 已經用 handoff 交接出去了（handoff 摘要已涵蓋，不再提供）；
 // offered：已經提供給哪些 session（同一段對話 compaction 後不重複）
 export type Progress = ProgressFields & { sid: string; at: number; handed?: true; offered?: string[] }
@@ -28,7 +26,7 @@ export const isProgressState = (v: unknown): v is ProgressState => typeof v === 
 export const stateLabel = (s: ProgressState) => STATE_LABEL[s]
 
 export const progressSize = (p: ProgressFields) =>
-  [p.task, p.verified, p.next, ...p.files].reduce((n, s) => n + [...(s ?? '')].length, 0)
+  [p.task, p.verified, p.next, ...(p.decisions ?? []), ...p.files].reduce((n, s) => n + [...(s ?? '')].length, 0)
 
 // 模型看的相對時間
 export function agoText(ms: number) {
@@ -39,7 +37,7 @@ export function agoText(ms: number) {
 
 // 這份進度的內容（一行）
 const bodyText = (p: ProgressFields) =>
-  `任務「${p.task}」、狀態${STATE_LABEL[p.state]}${p.verified ? `、最後驗證：${p.verified}` : ''}${p.next ? `、下一步：${p.next}` : ''}${p.files.length ? `、相關檔案：${p.files.join('、')}` : ''}`
+  `任務「${p.task}」、狀態${STATE_LABEL[p.state]}${p.verified ? `、最後驗證：${p.verified}` : ''}${p.next ? `、下一步：${p.next}` : ''}${p.decisions?.length ? `、這件工作的決定：${p.decisions.join('；')}` : ''}${p.files.length ? `、相關檔案：${p.files.join('、')}` : ''}`
 
 // 新對話開頭要提供的文字；不該提供就回 undefined：
 // 同一個 session 產生的（還在同一段對話）、已經交接出去、超過一天、這個 session 已經提供過

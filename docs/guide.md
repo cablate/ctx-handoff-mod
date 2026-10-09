@@ -26,8 +26,8 @@ After about 55 idle minutes it sends a tiny request so the conversation cache do
 
 What you correct or explain is collected into one notes file per project, loaded into each new conversation. It's plain Markdown you can edit: `~/.claude/projects/<project path>/memory/ctx-handoff.md`.
 
-- **Memories:** preferences, corrections, facts and locations. Preferences and corrections load in full, and only when they match something you actually said. Facts and locations load as titles; Claude reads the rest when it needs it. Facts unconfirmed for 30 days are archived (not loaded, not deleted).
-- **Rules:** practices that keep coming up, such as "use forward slashes in Bash paths (3 times)". Loaded once seen twice.
+- **Memories:** preferences (including how you like to work and be talked to), corrections, decisions with their reasons, facts and locations. Decisions that only matter for the task at hand go to the progress note instead, and anything already in your CLAUDE.md files isn't repeated. Preferences and corrections load in full, and only when they match something you actually said. Facts and locations load as titles; Claude reads the rest when it needs it. Facts unconfirmed for 30 days are archived (not loaded, not deleted).
+- **Rules:** practices that keep coming up, such as "use forward slashes in Bash paths (3 times)". The count is how many times you had to say it: Claude simply following a rule doesn't add to it. Loaded once seen twice.
 - **Procedures:** multi-step routines you had Claude repeat, such as "release: bump the version → changelog → tag → GitHub release". Not loaded, to keep the context small.
 
 The notes update every 30 of your messages, after 55 idle minutes, before a handoff, or on `/handoff distill`. Only the new part of the conversation is sent, to Sonnet 5.5 at low effort; a short update takes about 1,200 tokens. Conversations under 30k tokens are skipped. Anything that looks like a key or password is dropped. The status line counts down ("18 more messages until notes update").
@@ -36,7 +36,7 @@ The notes update every 30 of your messages, after 55 idle minutes, before a hand
 
 ### Where you left off
 
-If you `/clear` yourself, Claude Code crashes, or you just open a new conversation, the new one doesn't know where the last one stopped. Each notes update therefore also keeps a short progress note for the folder: the task, whether it's done, in progress or blocked, the last check that passed, the next step and up to 5 key files. It rides in the same request as the notes.
+If you `/clear` yourself, Claude Code crashes, or you just open a new conversation, the new one doesn't know where the last one stopped. Each notes update therefore also keeps a short progress note for the folder: the task, whether it's done, in progress or blocked, the last check that passed, the next step, decisions that only matter until this task is done, and the key files. It rides in the same request as the notes.
 
 The next conversation in that folder is told about it once, within 24 hours: "the last conversation (2 hours ago) stopped at…". If you carry on, Claude starts from there; if you're doing something else, it ignores it. Conversations that were handed off automatically don't get it, since the summary already covers them.
 

@@ -207,6 +207,17 @@ async function notesFile($: EngineInterface) {
   return `${await claudeDir($)}/projects/${encodeProject(await workspace($))}/memory/ctx-handoff.md`
 }
 
+// 整理看得到的既有指引：工作區與使用者的 CLAUDE.md。新對話本來就會讀到，整理才知道哪些不用再記
+// （2026-10-09 評估：沒給它看時，常把 CLAUDE.md 已有的事又記一次）
+async function guidesText($: EngineInterface) {
+  const parts: string[] = []
+  for (const [label, path] of [['工作區', `${await workspace($)}/CLAUDE.md`], ['使用者', `${await claudeDir($)}/CLAUDE.md`]] as const) {
+    const text = (await readText($, path)).trim()
+    if (text) parts.push(`--- ${label}：${path} ---\n${text}`)
+  }
+  return parts.join('\n\n')
+}
+
 async function isDistillOn($: EngineInterface) {
   return (await $.store.get('distill')) !== false
 }
@@ -268,7 +279,7 @@ async function distill($: EngineInterface, why: string, queue = true, snap?: Dis
       effort: DISTILL_EFFORT,
       maxTokens: DISTILL_MAX_TOKENS,
       timeoutMs: DISTILL_TIMEOUT_MS,
-      system: distillPrompt(transcript.found ? prev?.anchor : undefined, notes, localStamp(started).slice(0, 10), progressForPrompt(await loadProgress($), started), candidates),
+      system: distillPrompt(transcript.found ? prev?.anchor : undefined, notes, localStamp(started).slice(0, 10), progressForPrompt(await loadProgress($), started), candidates, await guidesText($)),
       prompt: `=== 對話紀錄 ===\n${transcript.text || '（沒有新的對話內容）'}\n=== 對話紀錄結束 ===\n\n依系統指示輸出 ACTIONS。`,
     })
     if (!r.isAnswered) {

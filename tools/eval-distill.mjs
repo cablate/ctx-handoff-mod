@@ -129,6 +129,22 @@ async function build() {
   console.log(`題目 ${total} 題 → ${DIR}/cases`)
 }
 
+// 那段對話的工作區與使用者的 CLAUDE.md（和 register.ts 的 guidesText 同格式）。用現在的版本，不是當時的：
+// 之後才寫進去的事會被當成「已有」，新舊提示遇到的一樣，不影響比較
+const guidesCache = new Map()
+function guidesOf(c) {
+  if (!guidesCache.has(c.id)) {
+    const cwd = readRows(c.file).find(r => r.cwd)?.cwd?.replace(/\\/g, '/')
+    const parts = []
+    for (const [label, path] of [['工作區', cwd && `${cwd}/CLAUDE.md`], ['使用者', `${C}/CLAUDE.md`]]) {
+      const text = path && existsSync(path) ? readFileSync(path, 'utf8').trim() : ''
+      if (text) parts.push(`--- ${label}：${path} ---\n${text}`)
+    }
+    guidesCache.set(c.id, parts.join('\n\n'))
+  }
+  return guidesCache.get(c.id)
+}
+
 const caseIds = only => readdirSync(`${DIR}/cases`).map(f => f.replace(/\.json$/, '')).filter(id => only.length === 0 || only.includes(id))
 const loadCase = id => JSON.parse(readFileSync(`${DIR}/cases/${id}.json`, 'utf8'))
 const onlyOf = () => (opt('only', '') ?? '').split(',').filter(Boolean)
@@ -150,7 +166,8 @@ async function run() {
   await pool(ids, Number(opt('jobs', 3)), async id => {
     const c = loadCase(id)
     const notes = mod.notes.parseNotes(c.notes)
-    const system = mod.distill.distillPrompt(c.anchor, notes, c.day, undefined, [])
+    // 舊版的 distillPrompt 沒有第 6 個參數，多傳的會被忽略
+    const system = mod.distill.distillPrompt(c.anchor, notes, c.day, undefined, [], guidesOf(c))
     const input = `=== 對話紀錄 ===\n${c.transcript || '（沒有新的對話內容）'}\n=== 對話紀錄結束 ===\n\n依系統指示輸出 ACTIONS。`
     try {
       const r = await claudeWith(DIR, { model: MODEL, system, input, effort: 'low' })
@@ -171,16 +188,20 @@ const actionsText = o => (o.actions.length === 0 ? '（沒有任何動作）' : 
 
 const GOAL = `背景：AI 助手在背景定期「整理」對話，把值得記住的事寫進這個專案的筆記（經驗檔），新對話開頭會帶入。目的是同樣的話使用者不用講第二次：使用者說過的偏好、要求與糾正，做過的決定與理由，以後會再用到的專案事實（位置、指令、限制、坑），重複出現的做法，都應該留下；新對話因此不會再犯同樣的錯、不用重問。
 
-值得記的：使用者明講的偏好、要求與糾正；有理由的決定；以後會再用到、而且從程式碼或文件不容易直接看出來的事實；同樣的做法重複出現。
-不值得記的：進度與待辦、只在這次有用的細節、這次改了哪些程式、推測、能直接從程式碼或文件看到的、金鑰。已經在既有筆記裡、這段對話沒有新根據的，不算該記。
+標準（維護者 2026-10-09 校準）：
+值得記的：使用者明講的偏好、要求、糾正與溝通方式（例如不耐煩冗長的過程、可逆的事直接做）；有理由的決定，就算已經寫進程式也算（理由從程式碼看不出來）；以後會再用到、從程式碼看不出來的事實與坑；同樣的做法重複出現。
+不值得記的：進度與待辦；只跟眼前這件工作有關的決定（例如這次先用哪個樣式、某個 PR 先放著；這些交給進度備忘 set_progress，不評）；這次改了哪些程式；某次實驗的數字；推測；金鑰；「已有的指引」（CLAUDE.md）已經寫過的事。已經在既有筆記裡、這段對話沒有新根據的，不算該記。
+「已有的指引」寫過、AI 卻又違反而被使用者糾正：應該用規則記下這次再犯（add_rule 或 confirm_rule，累積後會做成守門）；改成新增一條記憶算 duplicate。
+確認（confirm）的標準：user、feedback 記憶與規則，只有使用者在這段對話又說了一次、或 AI 又犯而被使用者糾正才算；AI 照著做、使用者沒說話卻 confirm，算 wrong。project、reference 要這段對話實際用到而且證實仍正確才算；只是提到就 confirm，算 wrong。
+助理提出、使用者只回「好」「可以」「定案」的是決定，該記成 project；記成 user 或 feedback 算 misattributed。
 
-動作說明：add／update／delete／confirm_memory 是記憶（type：user 使用者偏好、feedback 使用者的糾正、project 專案事實、reference 位置）；add／update／confirm_rule 是規則（count 是出現次數）；procedure 是多步驟做法；set_progress 是進度備忘（不算筆記，不評）。user／feedback 一定附 quote，程式比對過是使用者自己說的。`
+動作說明：add／update／delete／confirm_memory 是記憶（type：user 使用者偏好、feedback 使用者的糾正、project 決定與事實、reference 位置）；add／update／confirm_rule 是規則（count 是出現次數）；procedure 是多步驟做法；set_progress 是進度備忘（不算筆記，不評）。user／feedback 一定附 quote，程式比對過原話確實出自使用者，但意思是否相符要你判斷。`
 
 export const JUDGE_PROMPT = `你是評審，評估背景整理從一段對話記下的專案筆記。
 
 ${GOAL}
 
-你會拿到：整理前已有的筆記、這段對話、整理輸出的動作（已通過程式驗證）。
+你會拿到：已有的指引（CLAUDE.md）、整理前已有的筆記、這段對話、整理輸出的動作（已通過程式驗證）。
 
 1. 從對話列出值得記下的事，每項判斷整理有沒有記到（意思記到就算）。
 2. 檢查整理的每個動作，有問題的列出：wrong（內容錯或和對話不符）、misattributed（把助理的做法記成使用者的要求）、not_durable（進度、一次性的細節）、duplicate（既有筆記已經有卻又新增）、vague（太籠統，新對話用不上）。
@@ -196,7 +217,8 @@ ${GOAL}
 
 分數：5 該記的都記到、沒有記錯；4 漏一兩件次要的或有一個小問題；3 漏了重要的（使用者的糾正或偏好）或有明顯記錯；2 大部分該記的沒記到或記錯不少；1 幾乎沒用或有害。`
 
-const judgeInput = (c, o) => `=== 整理前已有的筆記 ===\n${c.notes}\n=== 筆記結束 ===\n\n=== 這段對話 ===\n${c.transcript}\n=== 對話結束 ===\n\n=== 整理輸出的動作 ===\n${actionsText(o)}\n=== 動作結束 ===\n\n依系統指示輸出 JSON。`
+const guidesBlock = c => `=== 已有的指引（CLAUDE.md，新對話本來就會讀到）===\n${guidesOf(c) || '（無）'}\n=== 指引結束 ===\n\n`
+const judgeInput = (c, o) => `${guidesBlock(c)}=== 整理前已有的筆記 ===\n${c.notes}\n=== 筆記結束 ===\n\n=== 這段對話 ===\n${c.transcript}\n=== 對話結束 ===\n\n=== 整理輸出的動作 ===\n${actionsText(o)}\n=== 動作結束 ===\n\n依系統指示輸出 JSON。`
 
 async function judge() {
   const label = opt('label', '')
@@ -227,7 +249,7 @@ export const COMPARE_PROMPT = `你是評審，比較同一段對話的兩份背�
 
 ${GOAL}
 
-你會拿到：整理前已有的筆記、這段對話、A 與 B 各自輸出的動作（都已通過程式驗證）。
+你會拿到：已有的指引（CLAUDE.md）、整理前已有的筆記、這段對話、A 與 B 各自輸出的動作（都已通過程式驗證）。
 
 1. 從對話列出值得記下的事，每項判斷 A、B 各自有沒有記到（意思記到就算）。
 2. 列出 A、B 各自有問題的動作：wrong、misattributed、not_durable、duplicate、vague（意思同上）。
@@ -243,7 +265,7 @@ ${GOAL}
   "reason": "一兩句"
 }`
 
-const compareInput = (c, a, b) => `=== 整理前已有的筆記 ===\n${c.notes}\n=== 筆記結束 ===\n\n=== 這段對話 ===\n${c.transcript}\n=== 對話結束 ===\n\n=== A 的動作 ===\n${actionsText(a)}\n=== A 結束 ===\n\n=== B 的動作 ===\n${actionsText(b)}\n=== B 結束 ===\n\n依系統指示輸出 JSON。`
+const compareInput = (c, a, b) => `${guidesBlock(c)}=== 整理前已有的筆記 ===\n${c.notes}\n=== 筆記結束 ===\n\n=== 這段對話 ===\n${c.transcript}\n=== 對話結束 ===\n\n=== A 的動作 ===\n${actionsText(a)}\n=== A 結束 ===\n\n=== B 的動作 ===\n${actionsText(b)}\n=== B 結束 ===\n\n依系統指示輸出 JSON。`
 
 async function compare() {
   const [x, y] = (opt('pair', '') ?? '').split(',')
