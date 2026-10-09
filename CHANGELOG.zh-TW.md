@@ -6,6 +6,10 @@ ctx-handoff 每個版本值得注意的改動。格式依照 [Keep a Changelog](
 
 ## [未發布]
 
+## [0.6.0] - 2026-10-09
+
+交接摘要現在帶得到新對話需要的大部分內容，專案筆記照你在意的標準收，寫成規則還一再犯的會變成守門、由 Claude 問你要不要用。放進 repo 的項目不再卡住，`/config` 的殘留設定列也清掉了。
+
 ### 新增
 
 - **新的首頁：** README 以 banner 和動畫概覽開場，每個功能配一張圖，細節移到[使用指南](docs/guide.zh-TW.md)。
@@ -116,7 +120,8 @@ Claude 現在會注意到自己的小錯：重跑同一個失敗時提醒、沒�
 
 第一版：context 到門檻時自動交接、離開時保持快取並在之後存好交接摘要，以及專案筆記。
 
-[未發布]: https://github.com/cablate/ctx-handoff-mod/compare/ctx-handoff--v0.5.0...HEAD
+[未發布]: https://github.com/cablate/ctx-handoff-mod/compare/ctx-handoff--v0.6.0...HEAD
+[0.6.0]: https://github.com/cablate/ctx-handoff-mod/compare/ctx-handoff--v0.5.0...ctx-handoff--v0.6.0
 [0.5.0]: https://github.com/cablate/ctx-handoff-mod/compare/ctx-handoff--v0.4.0...ctx-handoff--v0.5.0
 [0.4.0]: https://github.com/cablate/ctx-handoff-mod/compare/ctx-handoff--v0.3.0...ctx-handoff--v0.4.0
 [0.3.0]: https://github.com/cablate/ctx-handoff-mod/releases/tag/ctx-handoff--v0.3.0

@@ -6,6 +6,10 @@ All notable changes to ctx-handoff. The format follows [Keep a Changelog](https:
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-09
+
+Handoff summaries now carry most of what the next conversation needs, project notes follow what you actually care about, and rules that keep failing turn into guards Claude asks you about. Items moved into your repo no longer get stuck, and leftover `/config` rows are gone.
+
 ### Added
 
 - **A new front page:** the README opens with a banner and an animated overview, shows each feature in a picture, and moves the details into a [guide](docs/guide.md).
@@ -116,7 +120,8 @@ Notes stay in the project you started in, and updating them costs far less.
 
 First release: automatic handoff at a context threshold, keeping the cache warm while you're away with a saved handoff after that, and project notes.
 
-[unreleased]: https://github.com/cablate/ctx-handoff-mod/compare/ctx-handoff--v0.5.0...HEAD
+[unreleased]: https://github.com/cablate/ctx-handoff-mod/compare/ctx-handoff--v0.6.0...HEAD
+[0.6.0]: https://github.com/cablate/ctx-handoff-mod/compare/ctx-handoff--v0.5.0...ctx-handoff--v0.6.0
 [0.5.0]: https://github.com/cablate/ctx-handoff-mod/compare/ctx-handoff--v0.4.0...ctx-handoff--v0.5.0
 [0.4.0]: https://github.com/cablate/ctx-handoff-mod/compare/ctx-handoff--v0.3.0...ctx-handoff--v0.4.0
 [0.3.0]: https://github.com/cablate/ctx-handoff-mod/releases/tag/ctx-handoff--v0.3.0
