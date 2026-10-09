@@ -65,7 +65,7 @@ test('守門：suggest 只送寫進 repo 後又被糾正、或不放進 repo 卻
   expect(r.text).toContain('2 次工具呼叫中會命中 1 次')
   expect(r.text).toContain('範例：擋「git push origin main」，放行「node cli.mjs preflight && git push」')
   // 已有守門（任何狀態）的規則不再提
-  const again = await cmd($, 'guard suggest')
+  await cmd($, 'guard suggest')
   expect(w.completes.length).toBe(2)
   expect(w.completes[1]?.system).not.toContain('### 推送前先跑 preflight')
 })

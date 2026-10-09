@@ -2,7 +2,7 @@
 import { t } from './i18n'
 import { PROGRESS_TOTAL_MAX, isProgressState, progressSize } from './progress'
 import type { ProgressFields } from './progress'
-import { EVIDENCE_KEEP, NOTE_TAG, PROJECT_DECLINED, PROJECT_IN, STALE_DAYS, inProject, inProjectText, isArchived, memHead, memOneLine, procBody, procOneLine, procRest, procSteps, procWhen, projectOf, ruleText, setProject, tag } from './notes'
+import { EVIDENCE_KEEP, NOTE_TAG, PROJECT_DECLINED, STALE_DAYS, inProject, inProjectText, isArchived, memHead, memOneLine, procBody, procOneLine, procRest, procSteps, procWhen, projectOf, ruleText, setProject, tag } from './notes'
 import type { Change, Memory, Notes, Procedure, Rule } from './notes'
 
 // 記憶給人看：標題是一句結論，做法／理由各一句；根據給整理模型判斷用，不帶入新對話
@@ -75,7 +75,7 @@ export function distillPrompt(anchor: string | undefined, notes: Notes, day: str
     '出現次數代表「使用者講了幾次」：使用者在這段對話又提一次，或 AI 又犯而被使用者糾正，才用 confirm_rule 增加次數，不要新增。AI 照著做而且有效、使用者沒說話，不加次數。',
     '',
     '三、進度（set_progress）：這個工作區「現在停在哪」，給之後新開的對話接續用；不是記憶，不會寫進經驗檔，工作做完就沒用。',
-    '目前的進度：' + progress,
+    `目前的進度：${progress}`,
     '- 附上的對話有實際的工作進展（改了東西、跑了驗證、做了決定、遇到阻礙）才輸出一行 set_progress；只是閒聊、提問、查資料就不輸出，前一份進度會保留。每次最多一行，整份取代舊的，所以前一份裡還有效的內容要帶過來。',
     '- task：目前的任務；state：done、in_progress、blocked 三選一；verified：最後一次實際驗證的結果，寫跑了什麼、結果如何，沒驗證過就省略，不要猜；next：下一步，一個具體動作（done 可省略）；decisions：這件工作做完前要記得的決定與使用者的指示，每項一句；files：最相關的檔案路徑。',
     '- 寫到接手的人看得懂就好，不要寫成長篇或流水帳。',
