@@ -7,7 +7,7 @@ const TW_MIXED = '我把 `watchCall` 改成在 turn.step 之後設定 pending fl
 // 繁體中文、英文術語很多（實際會這樣寫）
 const TW_HEAVY = '這次的 refactor 把 session.start 的 tool registration 拆成獨立的 helper，hot reload 時 engine 會 retract 沒有重新 register 的 tool，所以每次 session.start 都要 register 同一份 definition。另外 prompt cache 不受影響，因為 deferred tools 只多一筆 hint，不動 prefix。'
 const CN = '我把 watchCall 改成在 turn.step 之后设置标记，下一个工具结果会带上提醒。这样如果主对话的回复不是简体中文，只会提醒一次，之后有一步符合语言才会重新计算。测试也已经补好了，三种情况都有覆盖，所有检查都通过了。'
-const CN_HEAVY = '这次的 refactor 把 session.start 的 tool registration 拆成独立的 helper，hot reload 时 engine 会 retract 没有重新 register 的 tool，所以每次都要 register 同一份 definition。另外 prompt cache 不受影响，因为 deferred tools 只多一笔 hint。'
+const CN_HEAVY = '这次的 refactor 把 session.start 的 tool registration 拆成独立的 helper，hot reload 时 engine 会 retract 没有重新 register 的 tool，所以每次都要 register 同一份 definition。另外 prompt cache 不受影响，因为 deferred tools 只多一笔 hint，整体行为没有改变。'
 const EN = 'I updated the hook so that it sets a pending flag after each step. When the reply is not in the configured language, the reminder is attached to the next tool result, once per streak. All checks pass, and I added tests for the mid-turn and final answer cases.'
 const JA = 'フックを更新して、各ステップの後に保留フラグを設定するようにしました。返信が設定した言語でない場合は、次のツール結果にリマインダーを一度だけ付けます。テストも追加して、すべてのチェックが通っています。'
 const JA_HEAVY = 'この変更で session.start の tool registration を helper に分けました。hot reload のときに engine が retract する tool を、毎回同じ definition で register します。cache には影響しません。ただし deferred tools の hint が一件増えるので、prefix は変わらないことを確認してください。'
@@ -108,6 +108,12 @@ test('太短的不判斷：一兩句英文旁白、很短的中文', () => {
   expect(judge('   \n', 'ja')).toBe('short')
 })
 
+test('短英文不誤報：不到 40 個英文單字不當成換了語言', () => {
+  expect(judge('The build finished, the logs look normal, and I moved on to the next file.', 'zh-TW')).toBe('short')
+  // 中文說明夾一小段英文 log：英文沒有多到主導
+  expect(judge(`${TW_MIXED} The build log shows the cache was warm and every check passed.`, 'zh-TW')).toBe('on')
+})
+
 test('zh-TW：偶爾混進一兩個簡體字（引用、打字）不觸發', () => {
   expect(judge(`${TW_MIXED} 使用者原話是「这样可以」。`, 'zh-TW')).toBe('on')
 })
@@ -120,8 +126,8 @@ test('zh-TW：幾乎全英文、簡體中文、日文會觸發', () => {
   expect(judge(CN_HEAVY, 'zh-TW')).toBe('off')
   expect(judge(JA, 'zh-TW')).toBe('off')
   expect(judge(`${EN}\n\n${EN}`, 'zh-TW')).toBe('off')
-  // 英文為主、夾一點中文
-  expect(judge('Done. 完成了. I updated register.ts and added tests for the new hook, and all of the checks pass now.', 'zh-TW')).toBe('off')
+  // 英文為主、夾一點中文（要超過 40 個英文單字才判斷）
+  expect(judge('Done. 完成了. I updated register.ts and added tests for the new hook, and all of the checks pass now. The change keeps the cache warm, leaves the existing behavior untouched, and the new tests cover the mid-turn reminder, the final answer case, and the subagent case as well.', 'zh-TW')).toBe('off')
 })
 
 test('zh-CN：繁體中文與英文會觸發，簡體夾術語不觸發', () => {

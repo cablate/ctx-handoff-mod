@@ -58,11 +58,11 @@ export const TRADITIONAL_ONLY = new Set(PAIRS.map(p => p[1]))
 
 // ---------- 判斷 ----------
 
-// 太短的不判斷：漢字／假名／韓文少於 40 個、而且英文單字少於 16 個（一兩句英文旁白常見，不當成換了語言）
+// 太短的不判斷：漢字／假名／韓文少於 40 個、而且英文單字少於 40 個（一兩句英文旁白常見，不當成換了語言）
 export const MIN_CJK = 40
-export const MIN_LATIN = 16
+export const MIN_LATIN = 40
 // 某種文字占「單位」的比例超過這個才算主導。單位：英文 1 個單字、日韓中文 2 個字（平均詞長）
-export const DOMINANT = 0.6
+export const DOMINANT = 0.75
 // 簡繁專用字至少 3 個、占漢字超過 6%，才算寫成另一種字形
 export const MIX_MIN = 3
 export const MIX_SHARE = 0.06

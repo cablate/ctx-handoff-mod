@@ -4,7 +4,7 @@ import { tag } from './notes'
 
 // ---------- A：同一個工具連續兩次因同樣原因失敗 ----------
 
-export type Streak = { sig: string; count: number; nudged: boolean }
+export type Streak = { sig: string; count: number }
 
 const MAX_SIG = 200
 // 終端機顏色碼（用建構式寫，避免控制字元直接出現在樣式裡）
@@ -31,10 +31,16 @@ const briefOf = (text: string | undefined) => {
   return line.length > 80 ? `${line.slice(0, 80)}…` : line
 }
 
-export const retryNudgeText = (tool: string, text: string | undefined) =>
-  `${tag} 這個工具（${tool}）連續兩次因同樣原因失敗（${briefOf(text) || '沒有錯誤文字'}）。錯誤看起來是暫時性的（逾時、還在載入、連線中斷）就稍等再試一次；不是的話先找出原因並換一個做法，不要原樣重試。`
+export const retryNudgeText = (tool: string, text: string | undefined) => {
+  const sample = briefOf(text) || '沒有錯誤文字'
+  if (tool === 'Edit' || tool === 'MultiEdit')
+    return `${tag} ${tool} 連續兩次因同樣原因失敗（${sample}）。請勿憑記憶跨檔盲猜縮排或上下文：先用 Grep (rg -F) 或 Read (指定 offset/limit) 確認精確行號與原文；若為多處替換請改用 node ~/.claude/tools/safe-replace.mjs。`
+  if (tool === 'Read')
+    return `${tag} Read 連續兩次失敗（${sample}）。請勿繼續猜測路徑，先用 Glob 搜尋檔名或確認父目錄。`
+  return `${tag} 這個工具（${tool}）連續兩次因同樣原因失敗（${sample}）。錯誤看起來是暫時性的（逾時、還在載入、連線中斷）就稍等再試一次；不是的話先找出原因並換一個做法，不要原樣重試。`
+}
 
-// 記下一次工具結果；第 2 次相同簽名的失敗回傳要附給模型的提醒（每段連續失敗只提醒一次）。
+// 記下一次工具結果；第 2 次與第 4 次相同簽名的失敗回傳要附給模型的提醒。
 // key：呼叫的範圍＋工具名；成功就清掉這個工具的紀錄
 export function trackFailure(streaks: Map<string, Streak>, key: string, tool: string, isError: boolean, text: string | undefined): string | undefined {
   if (!isError) { streaks.delete(key); return undefined }
@@ -44,12 +50,11 @@ export function trackFailure(streaks: Map<string, Streak>, key: string, tool: st
   if (!prev || prev.sig !== sig) {
     // 簽名換了就是新的一段；上限只防無限長大
     if (!prev && streaks.size >= MAX_STREAKS) streaks.clear()
-    streaks.set(key, { sig, count: 1, nudged: false })
+    streaks.set(key, { sig, count: 1 })
     return undefined
   }
   prev.count += 1
-  if (prev.count < 2 || prev.nudged) return undefined
-  prev.nudged = true
+  if (prev.count !== 2 && prev.count !== 4) return undefined
   return retryNudgeText(tool, text)
 }
 
@@ -111,8 +116,8 @@ export function claimsDone(message: string | undefined): boolean {
 
 export const doneCheckText = (checkFailed = false) =>
   checkFailed
-    ? `${tag} 你說完成了，但這一輪改檔後的測試或檢查沒有通過。請修好問題並重新跑過測試或檢查，在回覆附上結果；若無法修好或與這次改動無關，請在回覆誠實說明失敗原因，不要直接說完成。`
-    : `${tag} 你說完成了，但這一輪改了檔案之後沒有跑任何測試或檢查。請跑和這次改動相關的測試或檢查，在回覆附上跑了什麼、結果如何；沒辦法驗證的，說明哪些沒驗證、為什麼，不要說完成。`
+    ? `${tag} 你說完成了，但這一輪改檔後的測試或檢查沒有通過。請修好問題並重新跑過測試或檢查，在回覆附上結果；若無法修好或與這次改動無關，請在回覆誠實說明失敗原因，不要直接說完成。收尾時請明確標示四級狀態之一：[已完成且已實測]、[已部署但待正式驗收]、[已修改但未實測（附原因）]、[待你拍板]。`
+    : `${tag} 你說完成了，但這一輪改了檔案之後沒有跑任何測試或檢查。請跑和這次改動相關的測試或檢查，在回覆附上跑了什麼、結果如何；沒辦法驗證的，說明哪些沒驗證、為什麼，不要說完成。收尾時請明確標示四級狀態之一：[已完成且已實測]、[已部署但待正式驗收]、[已修改但未實測（附原因）]、[待你拍板]。`
 
 // 回合結束時要不要擋下停止、請模型先驗證。每個回合最多一次；stopHookActive＝這次停止已經被別的 hook 擋過一次
 export function doneCheck(work: Work, message: string | undefined, stopHookActive: boolean): string | undefined {

@@ -1,6 +1,6 @@
 // 防呆提醒：同樣的失敗連續兩次、說完成了卻沒驗證
 import { expect, test } from 'claude-code/testing'
-import { claimsDone, doneCheck, failureSignature, freshWork, isCheckCommand, noteCall, trackFailure } from './loops'
+import { claimsDone, doneCheck, doneCheckText, failureSignature, freshWork, isCheckCommand, noteCall, retryNudgeText, trackFailure } from './loops'
 import type { Streak, Work } from './loops'
 import { cmd, ctl, say, stop, world } from './test-world'
 
@@ -18,19 +18,38 @@ test('失敗簽名：路徑、數字、空白不同但原因相同的錯誤視�
   expect(failureSignature(undefined)).toBe('')
 })
 
-test('連續失敗：第 2 次相同簽名才提醒、每段只提醒一次、成功與換錯誤重新算', () => {
+test('連續失敗：第 2 次與第 4 次相同簽名才提醒、成功與換錯誤重新算', () => {
   const m = new Map<string, Streak>()
   const call = (isError: boolean, text?: string) => trackFailure(m, 'Bash', 'Bash', isError, text)
   expect(call(true, 'boom 1')).toBeUndefined()
   expect(call(true, 'boom 2')).toContain(NUDGE)
   expect(call(true, 'boom 3')).toBeUndefined()
+  expect(call(true, 'boom 4')).toContain(NUDGE)
+  expect(call(true, 'boom 5')).toBeUndefined()
   expect(call(false)).toBeUndefined()
-  expect(call(true, 'boom 4')).toBeUndefined()
+  expect(call(true, 'boom 6')).toBeUndefined()
   expect(call(true, 'other error')).toBeUndefined()
   expect(call(true, 'other error')).toContain(NUDGE)
   // 使用者自己中斷的不算失敗
   expect(call(true, "The user doesn't want to proceed with this tool use")).toBeUndefined()
   expect(call(true, "The user doesn't want to proceed with this tool use")).toBeUndefined()
+})
+
+test('連續失敗導引：Edit／MultiEdit 指路 Grep 與 safe-replace，Read 指路 Glob，其他工具維持原句', () => {
+  for (const tool of ['Edit', 'MultiEdit']) {
+    const n = retryNudgeText(tool, 'String to replace not found')
+    expect(n).toContain(`${tool} 連續兩次因同樣原因失敗`)
+    expect(n).toContain('Grep (rg -F)')
+    expect(n).toContain('Read (指定 offset/limit)')
+    expect(n).toContain('node ~/.claude/tools/safe-replace.mjs')
+  }
+  const r = retryNudgeText('Read', 'File does not exist')
+  expect(r).toContain('Read 連續兩次失敗')
+  expect(r).toContain('Glob')
+  expect(r).not.toContain('safe-replace')
+  const b = retryNudgeText('Bash', 'Exit code 1')
+  expect(b).toContain('這個工具（Bash）')
+  expect(b).toContain('暫時性的（逾時、還在載入、連線中斷）')
 })
 
 test('連續失敗：提醒帶工具名與簡短錯誤；不同工具分開算', () => {
@@ -56,6 +75,14 @@ test('完成的說法：保守判斷，否定、提問、已說明沒驗證或�
     expect(claimsDone(m)).toBe(true)
   for (const m of ['還沒完成，我再看看', '尚未完成', '我先看過程式碼', '要我完成嗎？', 'Is it done?', '完成了，但我沒有跑測試', '已經改好了，但測試失敗', 'All done, though 1 test failed', 'Done, though I could not run the tests', undefined, ''])
     expect(claimsDone(m)).toBe(false)
+})
+
+test('完成前驗證的提醒：兩種情況都要模型標示四級狀態', () => {
+  for (const failed of [false, true]) {
+    const text = doneCheckText(failed)
+    for (const label of ['[已完成且已實測]', '[已部署但待正式驗收]', '[已修改但未實測（附原因）]', '[待你拍板]'])
+      expect(text).toContain(label)
+  }
 })
 
 test('完成前驗證：改檔後沒驗證或測試失敗才擋、scratchpad 不誤擋、每回合一次', () => {
@@ -126,6 +153,15 @@ test('重複失敗：錯誤不同、中間成功過、別的工具成功都不�
   // 別的工具的成功不影響這個工具的連續失敗
   expect(await call('Read', undefined)).toBeUndefined()
   expect((await call('Bash', fail('error B')))?.[0]).toContain(NUDGE)
+})
+
+test('重複失敗：Edit 連敗時透過 tool.call 附上跨檔編輯導引', async ($, on) => {
+  world(on, 1000)
+  ctl.toolReply = e => (e.tool === 'Edit' ? fail('String to replace not found') : undefined)
+  await $.tool.call({ tool: 'Edit', file_path: 'a.ts', old_string: 'a', new_string: 'b' })
+  const r = await $.tool.call({ tool: 'Edit', file_path: 'a.ts', old_string: 'a', new_string: 'b' })
+  expect(r.context?.[0]).toContain('Grep (rg -F)')
+  expect(r.context?.[0]).toContain('safe-replace.mjs')
 })
 
 test('重複失敗：和守門提醒並存，守門的 deny 不受影響', async ($, on) => {

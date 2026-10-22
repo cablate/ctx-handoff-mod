@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { NOTE_TAG, cmd, ctl, distillNow, say, step, world } from './test-world'
 
 const TW = '我把這個 hook 改成在每一步之後檢查說明的語言，如果不是繁體中文，就在下一個工具結果後面附一段提醒。這樣主對話可以及早收到通知，而且每一段只會提醒一次，測試也都補好了。'
-const EN = 'I changed the hook so that it checks the language of the explanation after every step. If it is not the configured language, a reminder is attached to the next tool result, once per streak, and tests are added.'
+const EN = 'I changed the hook so that it checks the language of the explanation after every step. If it is not the configured language, a reminder is attached to the next tool result, once per streak, and tests are added. The new tests cover the mid-turn reminder, the final answer case, and the subagent case as well.'
 const CN = '我把这个 hook 改成在每一步之后检查说明的语言，如果不是简体中文，就在下一个工具结果后面附一段提醒。这样主对话可以及早收到通知，而且每一段只会提醒一次，测试也都补好了。'
 const REMIND_TW = '繁體中文'
 const toolCall = ($: Parameters<typeof step>[0], agentId?: string) =>

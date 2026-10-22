@@ -6,6 +6,12 @@ All notable changes to ctx-handoff. The format follows [Keep a Changelog](https:
 
 ## [Unreleased]
 
+### Changed
+
+- **Sharper nudges after repeated failures:** when the same tool fails twice for the same reason, the reminder names the tool and points at the fix: Edit and MultiEdit suggest checking the exact text with Grep (`rg -F`) or Read with an offset and limit, and using `node ~/.claude/tools/safe-replace.mjs` for multiple replacements; Read suggests finding the file with Glob or checking the parent folder first. A second reminder follows at the fourth consecutive failure. Other tools keep the existing wording. Setting: `retry_nudge`.
+- **Fewer reply-language false alarms:** a reply now needs at least 40 English words (up from 16) before the language check runs, and one language must make up more than 75% of the text (up from 60%) before it counts as dominant. Chinese replies carrying English terms or a short log no longer trigger a reminder. Setting: `reply_language`.
+- **Status labels when a "done" claim is blocked:** the nudge now asks Claude to end with one of four states: `[已完成且已實測]`, `[已部署但待正式驗收]`, `[已修改但未實測（附原因）]` or `[待你拍板]`. Setting: `done_check`.
+
 ## [0.8.2] - 2026-10-18
 
 Progress notes now last 7 days so you can pick up after a weekend, the "done" check catches failed test runs instead of only missing ones (and ignores temporary files in `scratchpad/`), and the default idle refresh moves to 50 minutes to stay ahead of Claude Code 2.1.299+'s 54-minute idle compaction.
