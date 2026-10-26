@@ -70,6 +70,7 @@ Everything is set on the panel's Settings tab, not in `/config`. Numbers step wi
 | Keep cache warm | on | Also `/handoff refresh on\|off` |
 | `idle_minutes` | `50` | Idle minutes before each keep-warm request (5–59) |
 | `max_refresh` | `3` | Keep-warm requests per idle period before saving a summary instead |
+| `away_handoff` | on | Save that away summary (then `/handoff resume` or `continue` on return); off with keep-warm off means nothing happens while you are away |
 | Project notes | on | Also `/handoff distill on\|off` |
 | `distill_every` | `30` | Your messages between notes updates (5–200) |
 | `min_tokens` | `30000` | Smaller conversations skip cache keeping, away summaries and notes |

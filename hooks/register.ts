@@ -560,6 +560,7 @@ async function onIdle($: EngineInterface) {
     } finally { if (rt.handoffTask === task) rt.handoffTask = undefined; await refreshPanel($) }
   }
 
+  if (!cfg.awayHandoff) return
   rt.busy = true
   try {
     if (rt.refreshes === 0 && await isDistillOn($)) await distill($, t().distill.why.away)
@@ -918,7 +919,7 @@ async function loadPanelData($: EngineInterface): Promise<PanelData> {
 }
 
 // 設定分頁的列：SETTINGS 的值加上兩個用指令也能切的開關（保持快取、專案筆記，存在 store 的 refresh／distill），依主題排
-const SETTING_ORDER = ['auto_handoff', 'threshold', 'window_ratio', 'refresh', 'idle_minutes', 'max_refresh', 'distill', 'distill_every', 'min_tokens', 'notes_model', 'resume_hint', 'retry_nudge', 'done_check', 'reply_language', 'language']
+const SETTING_ORDER = ['auto_handoff', 'threshold', 'window_ratio', 'refresh', 'idle_minutes', 'max_refresh', 'away_handoff', 'distill', 'distill_every', 'min_tokens', 'notes_model', 'resume_hint', 'retry_nudge', 'done_check', 'reply_language', 'language']
 const STORE_SWITCHES = new Set(['refresh', 'distill'])
 
 async function settingRows($: EngineInterface): Promise<PanelSetting[]> {

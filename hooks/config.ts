@@ -26,6 +26,8 @@ type Config = {
   replyLanguage: ReplyLangSetting
   // 新對話開頭提供上一段對話停在哪（背景整理留下的進度備忘）
   resumeHint: boolean
+  // 閒置刷新用完（或刷新關閉）後產生離席交接，回來時用 /handoff resume 接續
+  awayHandoff: boolean
 }
 
 // 每個設定的型別與範圍：讀值時檢查、面板照它畫列與調整（數字每按一下加減 step，選項依序輪）
@@ -48,6 +50,7 @@ export const SETTINGS: readonly SettingSpec[] = [
   { key: 'retry_nudge', kind: 'bool', d: true },
   { key: 'done_check', kind: 'bool', d: true },
   { key: 'resume_hint', kind: 'bool', d: true },
+  { key: 'away_handoff', kind: 'bool', d: true },
 ]
 export const specOf = (key: string) => SETTINGS.find(s => s.key === key)
 
@@ -75,6 +78,7 @@ export const settingSource = (key: string, panel: Record<string, unknown>, optio
 const CONFIG_DEFAULTS: Config = {
   autoHandoff: false, threshold: 600_000, windowRatio: 0.8, idleMs: 50 * 60_000, maxRefresh: 3, minTokens: 30_000, distillEvery: 30,
   notesModel: 'claude-sonnet-5-5', language: 'auto', retryNudge: true, doneCheck: true, replyLanguage: 'auto', resumeHint: true,
+  awayHandoff: true,
 }
 // 目前的設定：只改欄位、不換物件，各檔 import 到的是同一份
 export const cfg: Config = { ...CONFIG_DEFAULTS }
@@ -127,5 +131,6 @@ export function resolveConfig(options: Record<string, unknown>, panel: Record<st
     doneCheck: get('done_check') as boolean,
     replyLanguage: get('reply_language') as ReplyLangSetting,
     resumeHint: get('resume_hint') as boolean,
+    awayHandoff: get('away_handoff') as boolean,
   }
 }

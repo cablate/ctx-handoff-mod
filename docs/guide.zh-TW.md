@@ -70,6 +70,7 @@ ctx-handoff 的完整說明：每個功能怎麼運作、所有設定與指令�
 | 離開時保持快取 | 開 | 也可用 `/handoff refresh on\|off` |
 | `idle_minutes` | `50` | 閒置幾分鐘後保持快取（5–59） |
 | `max_refresh` | `3` | 每段閒置最多保持幾次，之後改存摘要 |
+| `away_handoff` | 開 | 存那份離席摘要（回來時選 `/handoff resume` 或 `continue`）；和保持快取一起關，離開期間就什麼都不做 |
 | 專案筆記 | 開 | 也可用 `/handoff distill on\|off` |
 | `distill_every` | `30` | 每幾則你的訊息整理一次筆記（5–200） |
 | `min_tokens` | `30000` | 比這小的對話不保持快取、不存離席摘要、不整理筆記 |

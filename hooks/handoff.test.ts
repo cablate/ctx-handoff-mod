@@ -153,6 +153,25 @@ test('刷新關閉：閒置 55 分鐘直接存離席 handoff', async ($, on) => 
   expect(w.forks[0]).toContain('HANDOFF')
 })
 
+// 2026-10-26：使用者要關掉保溫與離席交接；只關刷新會讓離席交接提早在第一次閒置就產生
+test('刷新與離席交接都關閉：閒置多久都不 fork、不存離席狀態，訊息照常送出', async ($, on) => {
+  const w = world(on, 100_000, 1_000_000, { refresh: false })
+  ctl.pluginOptions = { away_handoff: false }
+  await endTurn($)
+  await w.clock.advance(5 * 60 * 60_000)
+  expect(w.forks).toEqual([])
+  expect(w.get('away:S1')).toBeUndefined()
+})
+
+test('離席交接關閉、刷新開著：照樣刷新 3 次，之後不產生離席交接', async ($, on) => {
+  const w = world(on, 100_000)
+  ctl.pluginOptions = { away_handoff: false }
+  await endTurn($)
+  await w.clock.advance(5 * 60 * 60_000)
+  expect(w.forks).toEqual(Array(3).fill('只回覆 OK'))
+  expect(w.get('away:S1')).toBeUndefined()
+})
+
 test('context 太小：不刷新也不產生 handoff', async ($, on) => {
   const w = world(on, 10_000)
   await endTurn($)

@@ -6,6 +6,10 @@ All notable changes to ctx-handoff. The format follows [Keep a Changelog](https:
 
 ## [Unreleased]
 
+### Added
+
+- **Away handoff can be turned off:** the new `away_handoff` setting (on by default) stops the summary saved after the keep-warm refreshes, so returning never asks for `/handoff resume` or `continue`. Before, turning keep-warm off made that summary come sooner, at the first idle period. Turn both off and nothing runs while you are away.
+
 ### Changed
 
 - **Sharper nudges after repeated failures:** when the same tool fails twice for the same reason, the reminder names the tool and points at the fix: Edit and MultiEdit suggest checking the exact text with Grep (`rg -F`) or Read with an offset and limit, and using `node ~/.claude/tools/safe-replace.mjs` for multiple replacements; Read suggests finding the file with Glob or checking the parent folder first. A second reminder follows at the fourth consecutive failure. Other tools keep the existing wording. Setting: `retry_nudge`.

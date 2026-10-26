@@ -6,6 +6,10 @@ ctx-handoff 每個版本值得注意的改動。格式依照 [Keep a Changelog](
 
 ## [未發布]
 
+### 新增
+
+- **可以關掉離席交接：** 新設定 `away_handoff`（預設開）關掉後，保持快取的刷新用完也不存離席摘要，回來時不會再要你選 `/handoff resume` 或 `continue`。以前只關保持快取，離席摘要反而在第一段閒置就產生；兩個都關，離開期間就什麼都不做。
+
 ### 變更
 
 - **重複失敗的提醒更精準：** 同一個工具連續兩次因同樣原因失敗時，提醒會點名工具並直接指出做法：Edit 與 MultiEdit 建議先用 Grep（`rg -F`）或指定 offset 與 limit 的 Read 確認精確原文，多處替換改用 `node ~/.claude/tools/safe-replace.mjs`；Read 建議先用 Glob 搜尋檔名或確認父目錄。連續第 4 次失敗會再提醒一次，其他工具維持原本的通用句。設定：`retry_nudge`。
