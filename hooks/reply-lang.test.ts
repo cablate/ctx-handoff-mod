@@ -1,6 +1,6 @@
 // 回覆語言提醒（經由 turn.step、tool.call、prompt.submit、/handoff 狀態）
 import { expect, test } from 'claude-code/testing'
-import { NOTE_TAG, cmd, ctl, distillNow, say, step, world } from './test-world'
+import { NOTE_TAG, cmd, ctl, distillNow, say, step, stop, world } from './test-world'
 
 const TW = '我把這個 hook 改成在每一步之後檢查說明的語言，如果不是繁體中文，就在下一個工具結果後面附一段提醒。這樣主對話可以及早收到通知，而且每一段只會提醒一次，測試也都補好了。'
 const EN = 'I changed the hook so that it checks the language of the explanation after every step. If it is not the configured language, a reminder is attached to the next tool result, once per streak, and tests are added. The new tests cover the mid-turn reminder, the final answer case, and the subagent case as well.'
@@ -206,4 +206,29 @@ test('回覆語言：/handoff 狀態在 language 沒設時顯示 auto → off', 
   // language 沒設時介面語言看系統語系：釘住介面語言，結果才不跟著執行測試那台機器（2026-10-08 CI 是英文而失敗）
   ctl.panelSettings = { language: 'zh-TW' }
   expect((await cmd($, '')).text).toContain('回覆語言 auto → off')
+})
+
+// ---------- 回合結束：最後的回答不是目標語言，擋下請它重寫 ----------
+
+test('回覆語言：最後的回答是英文，擋下停止請它用繁中重寫一次，下一則訊息不再重複提醒', async ($, on) => {
+  const w = world(on, 1000)
+  await step($, EN)
+  const out = await stop($, { last_assistant_message: EN })
+  expect(out.block).toStartWith('[ctx-handoff] ')
+  expect(out.block).toContain('重寫')
+  expect(w.logs.some(l => l.includes('重寫'))).toBe(true)
+  // 重寫後的那次停止（stop_hook_active）不再擋，就算還是英文也不循環
+  expect((await stop($, { last_assistant_message: EN, stop_hook_active: true })).block).toBeUndefined()
+  await say($, '好，繼續')
+  expect(w.contexts[0]).toBeUndefined()
+})
+
+test('回覆語言：最後的回答是繁中、夾英文術語、很短，或設 off，都不擋', async ($, on) => {
+  world(on, 1000)
+  expect((await stop($, { last_assistant_message: TW })).block).toBeUndefined()
+  expect((await stop($, { last_assistant_message: '先看 config 再跑 test。' })).block).toBeUndefined()
+  expect((await stop($, { last_assistant_message: 'Done.' })).block).toBeUndefined()
+  ctl.panelSettings.reply_language = 'off'
+  await say($, '關掉')
+  expect((await stop($, { last_assistant_message: EN })).block).toBeUndefined()
 })

@@ -162,6 +162,25 @@ export function reminderText(target: ReplyLang): string {
   }
 }
 
+// 回合要結束時，最後的回答不是目標語言：擋下停止，請它重寫一次（已經印出的那則收不回來，使用者會看到兩則）
+export function rewriteText(target: ReplyLang): string {
+  switch (target) {
+    case 'zh-TW': return `${tag} 最後的回覆不是繁體中文，請用繁體中文重寫一次（程式碼與專有名詞照原文；若是使用者指定其他語言的內容，不用重寫）。`
+    case 'zh-CN': return `${tag} 最后的回复不是简体中文，请用简体中文重写一次（代码和专有名词保持原文；若是用户指定其他语言的内容，不用重写）。`
+    case 'en': return `${tag} Your final reply was not in English. Rewrite it in English (keep code and proper nouns as is; skip this if the user asked for that language).`
+    case 'ja': return `${tag} 最後の返信が日本語ではありません。日本語で書き直してください（コードと固有名詞は原文のまま。ユーザーが別の言語を指定した内容なら不要）。`
+  }
+}
+
+// 回合結束（Stop）時：最後的回答不是目標語言就回傳要擋下的理由。stop_hook_active（已經擋過一次）不再擋，
+// 免得重寫後仍判斷不符時一直循環；擋下時清掉要跟著下一則訊息的提醒，重寫就是這次的提醒
+export function stopRewrite(state: ReplyState, message: string | undefined, stopHookActive: boolean, target: ReplyLang): string | undefined {
+  if (stopHookActive || !message || judge(message, target) !== 'off') return undefined
+  clearNext(state)
+  state.nudged = true
+  return rewriteText(target)
+}
+
 // 提醒的進度：nudged＝這一段（連續不是目標語言的回覆）已經提醒過；
 // pending＝等主對話下一個工具結果帶出去；next＝等使用者的下一則訊息帶出去
 export type ReplyState = { nudged: boolean; pending: string | undefined; next: string | undefined }

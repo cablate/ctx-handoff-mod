@@ -21,7 +21,7 @@ import type { Row } from './transcript'
 import { DISTILL_EFFORT, DISTILL_MAX_TOKENS, DISTILL_TIMEOUT_MS, GUARD_MAX_TOKENS, HANDOFF_TIMEOUT_MS, KEEP, DEFER_CAP_EXTRA, DEFER_CAP_RATIO, RELOAD_GRACE_MS, RETRY_MS, RETRY_TURNS, STOPPED, cfg, optionsOf, resetConfig, resolveConfig, settingSource, settingValue, specOf, stepSetting, thresholdOf } from './config'
 import { resetRuntime, rt } from './runtime'
 import { doneCheck, freshWork, noteCall, trackFailure } from './loops'
-import { clearNext, noteStep, peekNext, resolveReplyLang, takePending } from './lang'
+import { clearNext, noteStep, peekNext, resolveReplyLang, stopRewrite, takePending } from './lang'
 import { addBackgroundUsage, addStat, awayKey, describeUsage, pendingKey, pruneSeen, statsKey } from './records'
 import type { Away, DistillError, DistillLast, HandoffError, Kind, PendingSubmit, Saved, Stats, Usage } from './records'
 import { HANDOFF_PROMPT, forkFailure, heldBlock, sourceFreshness } from './handoff'
@@ -1233,6 +1233,17 @@ async function watchReply($: EngineInterface, r: { answer: string; toolUses: rea
   } catch {}
 }
 
+// 回合結束時最後的回答不是目標語言：擋下停止請它重寫（每回合最多一次，絕不丟例外）
+async function rewriteReason($: EngineInterface, e: { stop_hook_active?: boolean; last_assistant_message?: string }) {
+  try {
+    if (cfg.replyLanguage === 'off') return undefined
+    const target = await replyTarget($)
+    return target ? stopRewrite(rt.reply, e.last_assistant_message, e.stop_hook_active === true, target) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 // 回合結束時說完成了，但這一輪改檔之後沒有跑任何測試或檢查：回傳要擋下停止的理由（每回合最多一次）。
 // 紀錄用完就清；擋下的那次保留 reminded，之後同一回合的停止不再擋。使用者中斷的回合 Stop 不會觸發，
 // 紀錄由 turn.complete（isAborted）與下一則人類訊息清掉
@@ -1405,6 +1416,11 @@ export const register: Register = on => {
     if (reason !== undefined) {
       $.ui.log(t().loops.doneLog)
       return { ...out, block: reason }
+    }
+    const rewrite = e.agent_id === undefined ? await rewriteReason($, e) : undefined
+    if (rewrite !== undefined) {
+      $.ui.log(t().loops.rewriteLog)
+      return { ...out, block: rewrite }
     }
     try {
       await onStop($, e)
