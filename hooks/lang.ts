@@ -58,9 +58,8 @@ export const TRADITIONAL_ONLY = new Set(PAIRS.map(p => p[1]))
 
 // ---------- 判斷 ----------
 
-// 太短的不判斷：漢字／假名／韓文少於 40 個、而且英文單字少於 40 個（一兩句英文旁白常見，不當成換了語言）
-export const MIN_CJK = 40
-export const MIN_LATIN = 40
+// 只有幾個字（「OK.」「Done.」）不判斷，其餘一律看比例：一兩句英文旁白也是換了語言（2026-10-30 使用者要求）
+export const MIN_UNITS = 4
 // 某種文字占「單位」的比例超過這個才算主導。單位：英文 1 個單字、日韓中文 2 個字（平均詞長）
 export const DOMINANT = 0.75
 // 簡繁專用字至少 3 個、占漢字超過 6%，才算寫成另一種字形
@@ -125,9 +124,9 @@ export type Verdict = 'on' | 'off' | 'short'
 export function judge(text: string, target: ReplyLang): Verdict {
   const c = countOf(proseOf(text.slice(0, MAX_TEXT)))
   const cjk = c.han + c.kana + c.hangul
-  if (cjk < MIN_CJK && c.latin < MIN_LATIN) return 'short'
   const cjkUnits = cjk / 2
   const total = cjkUnits + c.latin
+  if (total < MIN_UNITS) return 'short'
   const latinShare = total > 0 ? c.latin / total : 0
   const mixed = (n: number) => n >= MIX_MIN && c.han > 0 && n / c.han > MIX_SHARE
   switch (target) {

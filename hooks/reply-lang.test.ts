@@ -46,10 +46,10 @@ test('回覆語言：符合目標語言的步驟不提醒；一步符合後，�
   expect((await toolCall($)).context?.[0]).toContain(REMIND_TW)
 })
 
-test('回覆語言：英文旁白和夾英文術語的繁體中文不提醒', async ($, on) => {
+test('回覆語言：一句英文旁白就提醒；夾英文術語的繁體中文不提醒', async ($, on) => {
   world(on, 1000)
   await step($, 'Let me read the file first.', { tools: 1 })
-  expect((await toolCall($)).context).toBeUndefined()
+  expect((await toolCall($)).context?.[0]).toContain(REMIND_TW)
   await step($, '我先把 `watchCall` 的 context 拆開，再看 turn.step 的 result 怎麼接 tool result，確認 prompt cache 不會因為多一段 hint 而失效，然後補上對應的 fixed test。', { tools: 1 })
   expect((await toolCall($)).context).toBeUndefined()
 })

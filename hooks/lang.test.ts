@@ -99,17 +99,19 @@ test('zh-TW：專有名詞、程式碼、指令、路徑、網址、表格不觸
   expect(judge('/handoff guard on 3 @user hooks/lang.ts `npm test` API JSON CI TS HTTP URL SQL CLI SDK OK', 'zh-TW')).toBe('short')
 })
 
-test('太短的不判斷：一兩句英文旁白、很短的中文', () => {
-  expect(judge('Let me read the file.', 'zh-TW')).toBe('short')
-  expect(judge("I'll check the tests first, then update the config and the docs.", 'zh-TW')).toBe('short')
-  expect(judge('Now let me update the config and then check the docs for the new setting.', 'zh-TW')).toBe('short')
-  expect(judge('好的，我來看一下。', 'en')).toBe('short')
+test('只有幾個字的不判斷', () => {
+  expect(judge('Done.', 'zh-TW')).toBe('short')
+  expect(judge('Looks good.', 'zh-TW')).toBe('short')
+  expect(judge('好，看一下。', 'en')).toBe('short')
   expect(judge('', 'zh-TW')).toBe('short')
   expect(judge('   \n', 'ja')).toBe('short')
 })
 
-test('短英文不誤報：不到 40 個英文單字不當成換了語言', () => {
-  expect(judge('The build finished, the logs look normal, and I moved on to the next file.', 'zh-TW')).toBe('short')
+test('一兩句英文旁白也算換了語言；中文夾短英文不算', () => {
+  expect(judge('Let me read the file.', 'zh-TW')).toBe('off')
+  expect(judge("I'll check the tests first, then update the config and the docs.", 'zh-TW')).toBe('off')
+  expect(judge('Found the reminder in the ctx-handoff mod. Now checking what language setting it reads.', 'zh-TW')).toBe('off')
+  expect(judge('先看 config 再跑 test。', 'zh-TW')).toBe('on')
   // 中文說明夾一小段英文 log：英文沒有多到主導
   expect(judge(`${TW_MIXED} The build log shows the cache was warm and every check passed.`, 'zh-TW')).toBe('on')
 })
@@ -126,7 +128,7 @@ test('zh-TW：幾乎全英文、簡體中文、日文會觸發', () => {
   expect(judge(CN_HEAVY, 'zh-TW')).toBe('off')
   expect(judge(JA, 'zh-TW')).toBe('off')
   expect(judge(`${EN}\n\n${EN}`, 'zh-TW')).toBe('off')
-  // 英文為主、夾一點中文（要超過 40 個英文單字才判斷）
+  // 英文為主、夾一點中文
   expect(judge('Done. 完成了. I updated register.ts and added tests for the new hook, and all of the checks pass now. The change keeps the cache warm, leaves the existing behavior untouched, and the new tests cover the mid-turn reminder, the final answer case, and the subagent case as well.', 'zh-TW')).toBe('off')
 })
 
