@@ -25,7 +25,7 @@ test('回覆語言：這步不是繁體中文又要呼叫工具，下一個工�
   const r1 = await toolCall($)
   expect(r1.context?.[0]).toStartWith('[ctx-handoff] ')
   expect(r1.context?.[0]).toContain(REMIND_TW)
-  expect(r1.context?.[0]).toContain('程式碼、指令、路徑與專有名詞維持原文')
+  expect(r1.context?.[0]).toContain('程式碼與專有名詞照原文')
   // 提醒只附在一個結果上
   expect((await toolCall($)).context).toBeUndefined()
   // 同一段連續不符合：不再提醒
@@ -130,7 +130,7 @@ test('回覆語言：設定走 pluginConfigs 也生效；指定語言不看 lang
   // 中文說明在 en 目標下不符合
   await step($, TW, { tools: 1 })
   const r = await toolCall($)
-  expect(r.context?.[0]).toContain('Your last explanation was not in English')
+  expect(r.context?.[0]).toContain('Please explain in English')
   await step($, EN, { tools: 1 })
   expect((await toolCall($)).context).toBeUndefined()
 })
@@ -145,7 +145,7 @@ test('回覆語言：不合法的設定值回到 auto', async ($, on) => {
 test('回覆語言：auto 跟著 Claude Code 的 language 設定', async ($, on) => {
   world(on, 1000, 1_000_000, {}, [], 0, 'English')
   await step($, TW, { tools: 1 })
-  expect((await toolCall($)).context?.[0]).toContain('Your last explanation was not in English')
+  expect((await toolCall($)).context?.[0]).toContain('Please explain in English')
 })
 
 test('回覆語言：auto 遇到簡體中文設定，抓出繁體中文', async ($, on) => {
@@ -153,7 +153,7 @@ test('回覆語言：auto 遇到簡體中文設定，抓出繁體中文', async 
   await step($, CN, { tools: 1 })
   expect((await toolCall($)).context).toBeUndefined()
   await step($, TW, { tools: 1 })
-  expect((await toolCall($)).context?.[0]).toContain('你刚才那段说明不是简体中文')
+  expect((await toolCall($)).context?.[0]).toContain('请用简体中文说明')
 })
 
 // 同一個 hook 在一個測試裡只能註冊一次，所以每種設定一個測試
