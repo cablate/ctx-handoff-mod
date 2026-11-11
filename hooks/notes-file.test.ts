@@ -493,3 +493,19 @@ test('家目錄工作區：不自動整理也不自動帶入專案筆記，手�
   await distillNow($)
   expect(w.completes.length).toBe(1)
 })
+
+test('非 ASCII 同字數工作區（如 D:/work/課程 與 D:/work/文章）：經驗檔各自獨立，不混入別桌對話', async ($, on) => {
+  const w = world(on, 100_000, 1_000_000, {}, [], 5)
+  ctl.curRoot = 'D:/work/課程'
+  ctl.curCwd = 'D:/work/課程'
+  await distillNow($)
+  const written = [...w.files.keys()].filter(k => k.startsWith(`${CLAUDE_PROJECTS}/D--work---`) && k.endsWith('/memory/ctx-handoff.md'))
+  expect(written.length).toBe(1)
+  expect(w.files.get(written[0]!) ?? '').toContain('使用者決定交接門檻維持 600k')
+
+  ctl.curRoot = 'D:/work/文章'
+  ctl.curCwd = 'D:/work/文章'
+  const ctx = await $.prompt.context({ blocks: [] })
+  expect(ctx.blocks.find(b => b.name === 'ctxHandoffProject')).toBeUndefined()
+})
+
