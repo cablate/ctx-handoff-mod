@@ -264,7 +264,7 @@ export const pushGuard = (state: string, mode = 'deny') => ({
 
 // 面板畫在輸入框上方（AbovePrompt）；/handoff panel 打開後才畫
 export const BAND_MOUNT = { plugin: 'ctx-handoff', surface: 'terminal' as const, component: 'AbovePrompt' as const,
-  props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 120, scroll: { offset: 0, bodyRows: 20 }, view: {} } }
+  props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 20, bodyColumns: 120, scroll: { offset: 0, bodyRows: 20 }, view: {} } }
 // tab：打開後切到哪個分頁（預設守門）
 export const openPanel = async ($: Engine, tab?: string) => {
   await cmd($, 'panel')

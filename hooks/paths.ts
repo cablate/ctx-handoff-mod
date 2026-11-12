@@ -11,7 +11,7 @@ function fnv1aHex(s: string) {
 export const encodeProject = (p: string) => {
   const s = slash(p)
   const base = s.replace(/[^A-Za-z0-9]/g, '-')
-  return /[^\x00-\x7F]/.test(s) ? `${base}-${fnv1aHex(s)}` : base
+  return /[\u0080-￿]/.test(s) ? `${base}-${fnv1aHex(s)}` : base
 }
 
 export const isAbs = (p: string) => /^[A-Za-z]:\//.test(p) || p.startsWith('/')

@@ -108,7 +108,7 @@ export function pairs(dir) {
     if (!existsSync(d)) continue
     for (const f of readdirSync(d)) {
       if (!f.endsWith(ZH)) continue
-      const en = join(d, f.slice(0, -ZH.length) + '.md')
+      const en = join(d, `${f.slice(0, -ZH.length)}.md`)
       out.push({ en, zh: join(d, f), exists: existsSync(en) })
     }
   }
