@@ -8,6 +8,7 @@ All notable changes to ctx-handoff. The format follows [Keep a Changelog](https:
 
 ### Added
 
+- **Notes as an inbox:** the new `inject_mode` setting (`full` by default) can be set to `inbox`, so a new conversation gets one line saying how many notes are waiting instead of the whole file. The new `/ctx-handoff:review` skill sorts each note into a tool or check, a one-line project rule, or deletion, shows the table for confirmation, then clears the handled notes.
 - **Away handoff can be turned off:** the new `away_handoff` setting (on by default) stops the summary saved after the keep-warm refreshes, so returning never asks for `/handoff resume` or `continue`. Before, turning keep-warm off made that summary come sooner, at the first idle period. Turn both off and nothing runs while you are away.
 
 ### Changed

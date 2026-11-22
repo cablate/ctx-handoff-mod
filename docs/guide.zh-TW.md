@@ -76,6 +76,7 @@ ctx-handoff 的完整說明：每個功能怎麼運作、所有設定與指令�
 | `min_tokens` | `30000` | 比這小的對話不保持快取、不存離席摘要、不整理筆記 |
 | `notes_model` | `claude-sonnet-5-5` | 整理筆記用的模型：Sonnet 5.5 或 Opus 5.5 |
 | `resume_hint` | 開 | 告訴新對話上一段停在哪 |
+| `inject_mode` | full | `full` 把經驗全文帶入每段新對話；`inbox` 只帶一行「N 條待整理」。用 `/ctx-handoff:review` 把它們歸位到專案的工具、檢查與規則檔後清空 |
 | `retry_nudge` | 開 | 重複失敗提醒 |
 | `done_check` | 開 | 說完成卻沒驗證的提醒 |
 | `reply_language` | `auto` | 回覆語言提醒：`auto`、`off`、`zh-TW`、`zh-CN`、`en` 或 `ja` |

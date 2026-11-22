@@ -28,6 +28,8 @@ type Config = {
   resumeHint: boolean
   // 閒置刷新用完（或刷新關閉）後產生離席交接，回來時用 /handoff resume 接續
   awayHandoff: boolean
+  // 新對話開頭怎麼帶入經驗：full 帶全文；inbox 只帶一行「N 條待整理」，由 /ctx-handoff:review 歸位後清空
+  injectMode: 'full' | 'inbox'
 }
 
 // 每個設定的型別與範圍：讀值時檢查、面板照它畫列與調整（數字每按一下加減 step，選項依序輪）
@@ -51,6 +53,7 @@ export const SETTINGS: readonly SettingSpec[] = [
   { key: 'done_check', kind: 'bool', d: true },
   { key: 'resume_hint', kind: 'bool', d: true },
   { key: 'away_handoff', kind: 'bool', d: true },
+  { key: 'inject_mode', kind: 'choice', options: ['full', 'inbox'], d: 'full' },
 ]
 export const specOf = (key: string) => SETTINGS.find(s => s.key === key)
 
@@ -78,7 +81,7 @@ export const settingSource = (key: string, panel: Record<string, unknown>, optio
 const CONFIG_DEFAULTS: Config = {
   autoHandoff: false, threshold: 600_000, windowRatio: 0.8, idleMs: 50 * 60_000, maxRefresh: 3, minTokens: 30_000, distillEvery: 30,
   notesModel: 'claude-sonnet-5-5', language: 'auto', retryNudge: true, doneCheck: true, replyLanguage: 'auto', resumeHint: true,
-  awayHandoff: true,
+  awayHandoff: true, injectMode: 'full',
 }
 // 目前的設定：只改欄位、不換物件，各檔 import 到的是同一份
 export const cfg: Config = { ...CONFIG_DEFAULTS }
@@ -132,5 +135,6 @@ export function resolveConfig(options: Record<string, unknown>, panel: Record<st
     replyLanguage: get('reply_language') as ReplyLangSetting,
     resumeHint: get('resume_hint') as boolean,
     awayHandoff: get('away_handoff') as boolean,
+    injectMode: get('inject_mode') as Config['injectMode'],
   }
 }

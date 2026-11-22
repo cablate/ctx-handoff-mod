@@ -76,6 +76,7 @@ Everything is set on the panel's Settings tab, not in `/config`. Numbers step wi
 | `min_tokens` | `30000` | Smaller conversations skip cache keeping, away summaries and notes |
 | `notes_model` | `claude-sonnet-5-5` | Model for notes: Sonnet 5.5 or Opus 5.5 |
 | `resume_hint` | on | Tell a new conversation where the last one stopped |
+| `inject_mode` | full | `full` carries the notes into each new conversation; `inbox` carries one line saying how many notes are waiting. Run `/ctx-handoff:review` to sort them into project tools, checks and rule files and clear them |
 | `retry_nudge` | on | Repeated failure nudge |
 | `done_check` | on | "Done" without checking nudge |
 | `reply_language` | `auto` | Reply language nudge: `auto`, `off`, `zh-TW`, `zh-CN`, `en` or `ja` |

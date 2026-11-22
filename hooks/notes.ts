@@ -176,7 +176,11 @@ export const memoryTiers = (notes: Notes, day: string) => {
 }
 
 // 帶入新對話開頭的內容；沒有東西就不帶。根據只給整理模型判斷用，不帶入
-export function contextText(notes: Notes, file: string, day: string) {
+export function contextText(notes: Notes, file: string, day: string, mode: 'full' | 'inbox' = 'full') {
+  if (mode === 'inbox') {
+    const n = notes.memory.filter(m => !isArchived(m, day)).length + notes.rules.filter(r => !inProject(r)).length + notes.procedures.filter(p => !inProject(p)).length
+    return n ? `${NOTE_TAG} ${n} 條背景經驗待整理（正本 ${file}）。執行 /ctx-handoff:review 逐條歸位並清空；整理前要用到時直接讀正本。` : undefined
+  }
   const rules = notes.rules.filter(r => r.count >= INJECT_MIN_COUNT && !inProject(r))
     .sort((a, b) => b.count - a.count).slice(0, INJECT_RULES)
   const full: Memory[] = []

@@ -411,6 +411,20 @@ test('記憶帶入新對話：偏好與修正整條、事實只帶標題、封�
   expect(text).not.toMatch(/根據|使用者原話/)
 })
 
+test('inject_mode inbox：開頭只帶一行待整理筆數（封存的不算），不帶全文；經驗檔是空的就不帶', async ($, on) => {
+  const w = world(on, 1000)
+  ctl.pluginOptions = { inject_mode: 'inbox' }
+  w.files.set(NOTES, TIERED_NOTES)
+  const r = await $.prompt.context({ blocks: [] })
+  const text = r.blocks.find(b => b.name === 'ctxHandoffProject')?.text ?? ''
+  expect(text).toMatch(/^\[ctx-handoff 專案經驗\] \d+ 條背景經驗待整理（正本 .+）。執行 \/ctx-handoff:review/)
+  expect(text.split('\n')).toHaveLength(1)
+  expect(text).not.toContain('使用者的偏好與修正')
+  w.files.set(NOTES, '# ctx-handoff 專案經驗\n')
+  const empty = await $.prompt.context({ blocks: [] })
+  expect(empty.blocks.find(b => b.name === 'ctxHandoffProject')).toBeUndefined()
+})
+
 test('記憶確認：confirm_memory 加一筆根據，封存的因此恢復帶入；整理提示標出封存', async ($, on) => {
   const w = world(on, 100_000, 1_000_000, {}, [], 5)
   w.files.set(NOTES, TIERED_NOTES)

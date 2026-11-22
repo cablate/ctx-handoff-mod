@@ -919,7 +919,7 @@ async function loadPanelData($: EngineInterface): Promise<PanelData> {
 }
 
 // 設定分頁的列：SETTINGS 的值加上兩個用指令也能切的開關（保持快取、專案筆記，存在 store 的 refresh／distill），依主題排
-const SETTING_ORDER = ['auto_handoff', 'threshold', 'window_ratio', 'refresh', 'idle_minutes', 'max_refresh', 'away_handoff', 'distill', 'distill_every', 'min_tokens', 'notes_model', 'resume_hint', 'retry_nudge', 'done_check', 'reply_language', 'language']
+const SETTING_ORDER = ['auto_handoff', 'threshold', 'window_ratio', 'refresh', 'idle_minutes', 'max_refresh', 'away_handoff', 'distill', 'distill_every', 'min_tokens', 'notes_model', 'inject_mode', 'resume_hint', 'retry_nudge', 'done_check', 'reply_language', 'language']
 const STORE_SWITCHES = new Set(['refresh', 'distill'])
 
 async function settingRows($: EngineInterface): Promise<PanelSetting[]> {
@@ -1324,7 +1324,7 @@ export const register: Register = on => {
       if (await isHomeWorkspace($)) return out
       const file = await notesFile($)
       const notes = parseNotes(await readNotes($, file))
-      const text = contextText(notes, file, localStamp(await $.clock.now()).slice(0, 10))
+      const text = contextText(notes, file, localStamp(await $.clock.now()).slice(0, 10), cfg.injectMode)
       const promote = await promoteBlock($, notes)
       const guardAsk = await guardAskBlock($, notes).catch(() => undefined)
       // 進度備忘出錯不影響經驗與放進專案的交代
